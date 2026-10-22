@@ -1,8 +1,5 @@
 # Kitsune 2.0 🦊
 
-> The next-generation repository knowledge base system — rebuilt from scratch with
-> 15 improvements over Kitsune 1.0, implementing the full vision from `VISION.md`.
-
 ## What's New in 2.0
 
 Kitsune 2.0 is a complete rewrite that addresses every improvement identified in the
