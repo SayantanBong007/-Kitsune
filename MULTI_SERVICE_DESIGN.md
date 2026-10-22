@@ -135,7 +135,7 @@ If none of these settle it, the connection is still recorded but marked **"possi
 ```mermaid
 flowchart TB
     subgraph KB["Shared knowledge base — system name: our-platform"]
-        Q[("Qdrant<br/>code, searchable by meaning")]
+        Q[("Qdrant<br/>code, searchable by meaning<br/>+ keyword search (BM25)")]
         N[("Neo4j<br/>call map + Offers + Calls")]
     end
     R1["Swing repo"] -->|"index as: swing-client"| KB
@@ -157,6 +157,26 @@ flowchart TB
    re-indexes only that repository's changed files and re-runs matching. Alternative:
    one scheduled job that refreshes all repositories.
 6. **Monorepo works the same way** — each service folder is one slice.
+
+### Everything must live in the shared base — including keyword search
+
+Kitsune searches code in two ways and combines them: **by meaning** (vectors in Qdrant)
+and **by exact keywords** (BM25, which catches exact names like `PaymentController` that
+meaning-based search can miss).
+
+Today ✅ the vectors and the call map are stored on the shared server, but a few parts
+are still **local files on the machine that ran the indexing**. In a shared setup, each
+CI job or developer machine would then hold a different, partial copy:
+
+| Part | Stored today | Problem when shared | Fix (in this proposal) |
+|---|---|---|---|
+| **Keyword search index (BM25)** | local file | each machine only has keywords for the repos it indexed | **move into Qdrant** (sparse vectors support BM25-style keyword search) — one shared index, searched together with meaning in one query |
+| **"Which files changed" record** | local file | short-lived CI runners lose it → full re-index on every run | store per repository in the shared base |
+| **Business concepts** (Payment, Order, …) | local file | computed from one repo, not the whole system | compute after matching, store in the shared base |
+| **Answer cache** | local file | could serve stale answers after another repo updates | keep it local but clear it whenever the shared base changes (version stamp) |
+
+**Alternative for keyword search:** Neo4j's built-in full-text index (also BM25-style).
+We recommend Qdrant so both kinds of search live in one place and run as one query.
 
 ---
 
@@ -206,6 +226,7 @@ in order.
 | Route prefixes (e.g. Spring class-level `/api`) | Paths would not match | Combine prefixes before matching (in scope) |
 | Frameworks we have not covered | No connections for that service | Add one extractor per framework; same pattern |
 | Two pipelines updating at the same time | Inconsistent connections | Lock around the matching step |
+| Keyword index (BM25) and some metadata are local files today | Each machine sees only part of the system in keyword search; CI re-indexes everything | Move them into the shared base (section 5) — part of Phase 1 |
 | Whole system's code readable from one server | Access risk | Internal network + authentication on Qdrant/Neo4j |
 | Infrastructure-only wiring (Istio, cron, cloud event rules) | Not visible in code | Out of scope for now |
 
@@ -235,7 +256,7 @@ progress is measured, not assumed.
 
 | Phase | Delivers | Size |
 |---|---|---|
-| **1. Services** | service labels, one shared knowledge base, search one or all services | Small |
+| **1. Services** | service labels, one shared knowledge base (incl. keyword search moved into Qdrant, changed-files record and concepts stored centrally), search one or all services | Medium |
 | **2. gRPC** | read `.proto` files, connect gRPC clients to servers | Medium |
 | **3. HTTP** | find endpoints and HTTP calls for our frameworks (below), path matching, config reading, mapping file | Large |
 | **4. Cross-service questions** | impact across services, end-to-end flows, service map | Medium |
@@ -308,6 +329,7 @@ shared:
 | Understand code inside a service (Java, Go, Python, JS/TS, …) | ✅ exists, quality-tested |
 | Accurate call graph inside a service | ✅ exists (100% on current tests) |
 | Shared server (Qdrant + Neo4j), separate systems (namespaces) | ✅ exists, tested on live servers |
+| Keyword search (BM25) | ✅ exists — but as a local file; moving it into Qdrant is new |
 | Incremental updates (only changed files) | ✅ exists |
 | Service labels, Offers/Calls lists, matching, cross-service questions | ❌ new — this proposal |
 | AI-agent access (MCP server) | ⚠️ experimental, not yet released |
