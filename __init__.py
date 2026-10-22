@@ -18,6 +18,17 @@ Supported Languages
 -------------------
 Python, JavaScript, TypeScript, C, C++, Go, Java, Rust
 """
+import os as _os
+
+# Load configuration from kitsune/.env (as the README describes), then from a
+# .env in the working directory. Existing environment variables win.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(_os.path.join(_os.path.dirname(__file__), ".env"))
+    _load_dotenv()
+except ImportError:
+    pass
+
 from kitsune.engine.knowledge_engine import RepositoryKnowledgeEngine
 from kitsune.models.chunk import Chunk
 from kitsune.models.concept import Concept

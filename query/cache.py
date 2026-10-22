@@ -21,10 +21,12 @@ Use cases:
 """
 from __future__ import annotations
 
+import atexit
 import hashlib
 import logging
 import os
 import pickle
+import re
 import time
 from collections import OrderedDict
 from typing import Any
@@ -36,6 +38,21 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_SIZE = 500           # Max cached queries
 DEFAULT_TTL_SECONDS = 3600       # 1 hour — stale entries are evicted
 SIMILARITY_THRESHOLD = 0.92      # Cosine similarity for semantic cache hit
+
+# Code-like tokens: snake_case, camelCase/PascalCase, dotted paths, `backticked`, foo()
+_IDENTIFIER_PATTERN = re.compile(
+    r"`([^`]+)`"
+    r"|\b(\w+(?:\.\w+)+)\b"
+    r"|\b(\w*_\w*|[a-z]+[A-Z]\w*|[A-Z][a-z0-9]+[A-Z]\w*)\b"
+    r"|\b(\w+)\("
+)
+
+
+def _identifiers(query: str) -> frozenset[str]:
+    """Return the code identifiers mentioned in a query."""
+    return frozenset(
+        next(g for g in m.groups() if g) for m in _IDENTIFIER_PATTERN.finditer(query)
+    )
 
 
 class QueryCache:
@@ -89,6 +106,8 @@ class QueryCache:
         self._semantic_hits = 0
 
         self._load_from_disk()
+        # put() is hot, so persist once at interpreter exit (and on flush/clear)
+        atexit.register(self._save_to_disk)
 
     def get(self, query: str, query_vector: list[float] | None = None) -> Any | None:
         """Check the cache for a matching result.
@@ -122,7 +141,7 @@ class QueryCache:
 
         # ── Strategy 2: Semantic similarity match ────────────────────────
         if query_vector is not None:
-            cached_result = self._semantic_lookup(query_vector)
+            cached_result = self._semantic_lookup(query_vector, _identifiers(query))
             if cached_result is not None:
                 self._semantic_hits += 1
                 logger.debug(f"Cache HIT (semantic): '{query[:50]}...'")
@@ -156,12 +175,15 @@ class QueryCache:
             "timestamp": time.time(),
         }
 
-    def _semantic_lookup(self, query_vector: list[float]) -> Any | None:
+    def _semantic_lookup(self, query_vector: list[float],
+                         identifiers: frozenset[str] = frozenset()) -> Any | None:
         """Find a cached result with a semantically similar query.
 
         Compares the query embedding against all cached query embeddings
         using cosine similarity. Returns the result if similarity exceeds
-        the threshold.
+        the threshold AND both queries name the same code identifiers —
+        "what calls get_user?" and "what calls get_order?" embed almost
+        identically but need different answers.
         """
         query_vec = np.array(query_vector, dtype=np.float32)
 
@@ -173,6 +195,8 @@ class QueryCache:
                 continue
             cached_vec = entry.get("vector")
             if cached_vec is None:
+                continue
+            if _identifiers(entry.get("query", "")) != identifiers:
                 continue
 
             cached_vec = np.array(cached_vec, dtype=np.float32)

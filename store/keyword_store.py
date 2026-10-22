@@ -96,8 +96,19 @@ class KeywordStore:
         self._corpus[chunk_id] = {
             "id": chunk_id,
             "tokens": tokens,
+            "text": text,
             "metadata": metadata,
         }
+
+    def delete_by_file(self, file_path: str):
+        """Remove all documents from a file (for incremental indexing).
+
+        Call build() afterwards to refresh the BM25 index.
+        """
+        stale = [cid for cid, doc in self._corpus.items()
+                 if doc.get("metadata", {}).get("file_path") == file_path]
+        for cid in stale:
+            del self._corpus[cid]
 
     def build(self):
         """Rebuild the BM25 index and persist to disk. Call after all upserts."""
@@ -137,7 +148,7 @@ class KeywordStore:
                 break
             doc = corpus_values[idx]
             result = dict(doc.get("metadata", {}))
-            result["text"] = doc.get("metadata", {}).get("text", "")
+            result["text"] = doc.get("text") or doc.get("metadata", {}).get("text", "")
             result["score"] = float(score)
             results.append(result)
 

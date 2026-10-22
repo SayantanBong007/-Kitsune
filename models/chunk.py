@@ -80,6 +80,7 @@ class Chunk:
     decorators: list[str] = field(default_factory=list)
     hash: str = ""
     concept: str = ""
+    id_suffix: str = ""      # disambiguates repeated names in one file (overloads, setters)
 
     def __post_init__(self):
         if not self.hash:
@@ -95,7 +96,7 @@ class Chunk:
     @property
     def node_id(self) -> str:
         """Stable unique ID for graph nodes: 'file_path::qualified_name'."""
-        return f"{self.file_path}::{self.qualified_name}"
+        return f"{self.file_path}::{self.qualified_name}{self.id_suffix}"
 
     @property
     def loc(self) -> int:

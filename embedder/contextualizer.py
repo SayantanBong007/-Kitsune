@@ -14,9 +14,9 @@ Features:
 from __future__ import annotations
 
 import logging
-import os
 from typing import Literal
 
+from kitsune.llm import get_llm_client, llm_api_key, llm_extra_kwargs, llm_model
 from kitsune.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
@@ -74,17 +74,12 @@ def build_llm_context_note(chunk: Chunk, repo_summary: str = "") -> str:
 
     NOTE: This is synchronous and usable from the indexing pipeline.
     """
-    api_key = os.getenv("GROQ_API_KEY", "")
-    if not api_key:
+    if not llm_api_key():
         return build_context_note(chunk)
 
     try:
-        from openai import OpenAI
-
-        client = OpenAI(
-            api_key=api_key,
-            base_url=os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1"),
-        )
+        client = get_llm_client()
+        model = llm_model()
 
         repo_ctx = f"Repository summary: {repo_summary}\n\n" if repo_summary else ""
         prompt = (
@@ -97,11 +92,11 @@ def build_llm_context_note(chunk: Chunk, repo_summary: str = "") -> str:
         )
 
         response = client.chat.completions.create(
-            model=os.getenv("LLM_MODEL", "openai/gpt-oss-20b"),
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=80,
             temperature=0.0,
-            reasoning_effort="low",
+            **llm_extra_kwargs(model),
         )
         note = (response.choices[0].message.content or "").strip()
         if note:

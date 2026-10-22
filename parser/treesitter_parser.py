@@ -63,8 +63,11 @@ FUNCTION_NODE_TYPES = {
     "function_definition",        # Python
     "function_declaration",       # JS/TS/Java/C++
     "arrow_function",             # JS/TS
+    "function_expression",        # JS/TS: const foo = function () {...}
+    "generator_function_declaration",  # JS/TS
     "method_definition",          # JS/TS
-    "method_declaration",         # Java
+    "method_declaration",         # Java / Go
+    "constructor_declaration",    # Java
     "function_item",              # Rust
     "function_declaration",       # Go
 }
@@ -81,13 +84,25 @@ STRUCT_NODE_TYPES = {
     "interface_type",             # Go
     "struct_specifier",           # C++
     "struct_item",                # Rust
+    "trait_item",                 # Rust
+    "interface_declaration",      # TS/Java
+}
+
+# Wrapper nodes whose inner definition is the real chunk boundary.
+# The wrapper's text (decorators, `export`) is kept as part of the chunk.
+WRAPPER_NODE_TYPES = {
+    "decorated_definition",       # Python: @decorator + def/class
+    "export_statement",           # JS/TS: export function/class/const
+    "lexical_declaration",        # JS/TS: const foo = () => {...}
+    "variable_declaration",       # JS:    var foo = function () {...}
+    "type_declaration",           # Go:    type Foo struct {...}
 }
 
 # All chunk-boundary node types
 CHUNK_NODE_TYPES = FUNCTION_NODE_TYPES | CLASS_NODE_TYPES | STRUCT_NODE_TYPES
 
 # Node types that represent function/method calls
-CALL_NODE_TYPES = {"call", "call_expression"}
+CALL_NODE_TYPES = {"call", "call_expression", "method_invocation"}
 
 # Node types that represent inheritance/base classes
 INHERITANCE_NODE_TYPES = {

@@ -10,9 +10,9 @@ Features:
 from __future__ import annotations
 
 import logging
-import os
 from typing import Iterator
 
+from kitsune.llm import get_llm_client, llm_api_key, llm_extra_kwargs, llm_model
 from kitsune.query.hybrid_search import SearchResult
 
 logger = logging.getLogger(__name__)
@@ -38,15 +38,12 @@ class Synthesizer:
     """Takes retrieved context and generates an LLM response."""
 
     def __init__(self):
-        base_url = os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1")
-        api_key = os.getenv("LLM_API_KEY", os.getenv("GROQ_API_KEY", ""))
-        self.model = os.getenv("LLM_MODEL", "openai/gpt-oss-20b")
+        self.model = llm_model()
 
-        if not api_key:
+        if not llm_api_key():
             logger.warning("No LLM_API_KEY or GROQ_API_KEY found! LLM queries will fail.")
 
-        from openai import OpenAI
-        self.client = OpenAI(base_url=base_url, api_key=api_key)
+        self.client = get_llm_client()
 
     def format_context(self, search_results: SearchResult) -> str:
         """Format the search results into a readable context string for the LLM.
@@ -71,7 +68,7 @@ class Synthesizer:
         # Graph dependencies
         deps = search_results.get("dependency_chunks", [])
         if deps:
-            context += "\n--- GRAPH DEPENDENCIES (called by primary chunks) ---\n"
+            context += "\n--- GRAPH DEPENDENCIES (callees/callers of primary chunks) ---\n"
             for chunk in deps:
                 name = chunk.get("qualified_name") or chunk.get("name", "Unknown")
                 file_path = chunk.get("file_path", "Unknown")
@@ -123,7 +120,7 @@ class Synthesizer:
                 ],
                 stream=True,
                 temperature=0.1,
-                reasoning_effort="low",
+                **llm_extra_kwargs(self.model),
             )
 
             for chunk in response:

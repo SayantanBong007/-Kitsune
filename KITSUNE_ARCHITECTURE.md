@@ -113,7 +113,7 @@ graph TB
         Search --> S3["Keyword<br/>(BM25 exact match)"]
         S1 --> RR["📊 Cross-Encoder<br/>Reranker"]
         S3 --> RR
-        RR --> Budget["🛡️ Context Budget<br/>cap at 5,000 chars"]
+        RR --> Budget["🛡️ Context Budget<br/>cap at 5,000 chars (configurable)"]
         Budget --> LLM["🤖 LLM Synthesizer<br/>cited answer"]
         LLM --> Ans[✅ Answer]
         Ans --> CW["💾 Write to cache"]
@@ -128,8 +128,9 @@ graph TB
 
 ```
 kitsune/
-├── engine/knowledge_engine.py       ← Single entry point (facade)
+├── engine/knowledge_engine.py       ← Single entry point (facade, per-project namespace)
 ├── indexer.py                       ← K1+K2+K3 orchestrator (parallel, incremental)
+├── llm.py                           ← Shared LLM client/model/reasoning settings
 │
 ├── models/
 │   ├── chunk.py                     ← Chunk with calls/inherits/imports/hash
@@ -166,9 +167,11 @@ kitsune/
 │   ├── extractor.py                 ← Discover concepts from naming patterns
 │   └── store.py                     ← Concept persistence + risk scoring
 │
-└── agents/                          ← KITSUNE'S OWN AI AGENTS
-    ├── investigator.py              ← Bug report → root cause analysis
-    └── planner.py                   ← Root cause → fix payload
+├── agents/                          ← KITSUNE'S OWN AI AGENTS
+│   ├── investigator.py              ← Bug report → root cause analysis
+│   └── planner.py                   ← Root cause → fix payload
+│
+└── tests/                           ← Offline unit tests + opt-in Qdrant/Neo4j integration tests
 ```
 
 ---
@@ -184,6 +187,15 @@ re-index files whose content hash has changed.
 K1 (PARSE)     tree-sitter parses source → AST-aware Chunks
                Calls, inheritance, imports, and decorators are extracted
                DURING parsing — no re-parsing needed later.
+               • Wrappers are unwrapped: Python @decorated defs, JS/TS
+                 `export …`, `const f = () => {}`, Go `type X struct`.
+               • JS/TS IIFEs and the module pattern (`const LF = (() => {…})()`)
+                 are chunked inside, scoped as `LF.fn`.
+               • Classes become an outline (signatures, bodies elided); each
+                 method is its own chunk, so class calls aren't double-counted.
+               • Runs of top-level code are split into ~2,000-char module chunks.
+               • Repeated names in one file (overloads, setters, module
+                 blocks) get a unique `@L<line>` suffix on their node_id.
 
 K2 (EMBED)     Each chunk gets a context note prepended, then is embedded
                using a local model (bge-small-en-v1.5, 384-dim).
@@ -209,8 +221,9 @@ sequenceDiagram
     participant CE as Concept Extractor
 
     Engine->>Idx: index_directory(repo, incremental=true)
-    Idx->>Idx: Load file hashes from disk
+    Idx->>Idx: Load file hashes (data_dir, per repo)
     Idx->>Idx: Scan files — skip unchanged
+    Idx->>Idx: Files gone since last run → remove from all stores
 
     par Parallel parsing (CPU-bound, thread-safe)
         Idx->>Pool: submit(parse, file_1)
@@ -224,17 +237,18 @@ sequenceDiagram
     Pool-->>Idx: All parsed chunks
 
     loop Sequential storage (thread-safe writes)
-        Idx->>Idx: Delete old chunks for this file
+        Idx->>Idx: Remove this file's old chunks (vector + keyword + graph)
         Idx->>Embed: embed_batch(texts, batch_size=64)
         Note over Embed: K2: Contextualize → Embed<br/>Memory-safe: 64 chunks per batch
         Embed-->>Idx: 384-dim vectors
         Idx->>VS: upsert_batch(chunks, vectors)
         Idx->>KS: upsert(chunk_id, text, metadata)
-        Idx->>GS: upsert node + add CALLS/EXTENDS/IMPORTS edges
+        Idx->>GS: upsert node (relink stubs) + add CALLS/EXTENDS/IMPORTS/DECORATED_BY edges
     end
 
     Idx->>KS: build() — finalize BM25 index
     Idx->>GS: save() — persist graph to disk
+    Idx->>Idx: Save hashes of successfully indexed files only
 
     Engine->>VS: get_all() — fetch indexed chunks
     VS-->>Engine: all chunk records
@@ -251,6 +265,9 @@ sequenceDiagram
 | **Extract relationships during K1** | Eliminates redundant re-parsing — the single biggest performance win |
 | **Batch embedding (64/batch)** | Prevents out-of-memory on 50,000+ chunk codebases |
 | **Incremental via file hashes** | Only re-indexes changed files — 90%+ time savings on subsequent runs |
+| **Hashes live in data_dir, not the repo** | Nothing is written into the indexed repo; two indexes of one repo don't share state. Failed files aren't recorded, so they're retried. An empty store ignores old hashes (full re-index) |
+| **Replace a file's data in every store** | Renamed/removed functions and deleted files don't linger in vectors, BM25, or the graph |
+| **Stub nodes + relinking** | A call to a function not indexed yet points at a stub; when the function is indexed, edges move onto it — the graph doesn't depend on file order. Stubs (builtins, libraries) are excluded from dependency/impact results |
 | **Concepts from indexed data** | Reuses already-stored chunks instead of re-parsing the repo |
 
 ---
@@ -292,16 +309,21 @@ sequenceDiagram
 
         loop For each primary chunk
             Engine->>GS: get_dependencies(name, depth=2)
-            GS-->>Engine: dependency names (multi-hop)
+            GS-->>Engine: callee names (multi-hop)
+            opt dependency / impact questions
+                Engine->>GS: get_upstream_callers(name, depth)
+                GS-->>Engine: caller names
+            end
         end
+        Note over Engine: Order: callers → callees, 1-hop → multi-hop<br/>+ file:line of each, for the LLM
         Engine->>VS: get_by_name(dep_name)
         VS-->>Engine: dependency chunks (full code)
 
         Engine->>RR: rerank(query, primary_chunks)
         RR-->>Engine: reranked chunks (cross-encoder scored)
 
-        Engine->>Budget: apply_budget(all_chunks, max=5000 chars)
-        Note over Budget: Drop whole chunks (never cut mid-function)<br/>Priority: primary > keyword > deps
+        Engine->>Budget: apply_budget(all_chunks, max=KITSUNE_CONTEXT_BUDGET)
+        Note over Budget: Drop whole chunks (never cut mid-function)<br/>Priority: primary > keyword > deps (in order above)
         Budget-->>Engine: budgeted chunk set
 
         Engine->>LLM: synthesize(question, formatted_context)
@@ -320,10 +342,13 @@ most efficient strategy:
 | Query Type | Example | Strategy | Graph? | Rerank? | Depth |
 |-----------|---------|----------|--------|---------|-------|
 | 🟦 **Lookup** | "What does `get_user` do?" | Direct vector lookup | ✗ | ✗ | 0 |
-| 🟩 **Dependency** | "What calls `process_payment`?" | Graph traversal only | ✓ | ✗ | 2 |
-| 🟧 **Impact** | "What breaks if I change X?" | Deep graph traversal | ✓ | ✗ | 3 |
+| 🟩 **Dependency** | "What calls `process_payment`?" | Semantic entry points → graph (callers + callees) | ✓ | ✗ | 2 |
+| 🟧 **Impact** | "What breaks if I change X?" | Semantic entry points → deep graph (callers + callees) | ✓ | ✗ | 3 |
 | 🟪 **Concept** | "How does auth work?" | Full hybrid | ✓ | ✓ | 2 |
 | 🟥 **Complex** | *(default fallback)* | Full hybrid | ✓ | ✓ | 2 |
+
+"Graph only" strategies still start with a semantic search: the graph needs entry-point
+functions to traverse from. BM25 and reranking are skipped for them.
 
 ### Query Cache — Two-Tier Matching
 
@@ -341,6 +366,13 @@ graph LR
 The cache uses **cosine similarity** between query embeddings to detect paraphrased
 questions. "How does auth work?" and "Explain the authentication system" hit the same
 cache entry. Typical hit rate in production: **30-60%**.
+
+Safeguards:
+- A semantic hit also requires both queries to name the **same code identifiers**
+  (`snake_case`, `camelCase`, `dotted.names`, `` `backticked` ``, `foo()`): "what calls
+  `get_user`?" never returns the cached answer for "what calls `get_order`?".
+- The cache is **cleared after every re-index**, so answers never describe stale code.
+- Persisted to disk at process exit (and on `flush()` / `clear()`).
 
 ---
 
@@ -369,7 +401,13 @@ Query: "how does authentication work?"
 
 - For each semantic match, traverses the `CALLS` graph to find dependencies
 - Multi-hop traversal (configurable depth) traces complete execution paths
-- Also follows `EXTENDS` (inheritance), `IMPORTS`, and `DECORATED_BY` edges
+- For "what calls X?" / impact questions, also walks **upstream** to the callers
+- `EXTENDS`, `IMPORTS`, and `DECORATED_BY` edges are stored too, and served by
+  `get_inheritance_tree()` and the graph APIs; search traversal follows `CALLS`
+- Calls are matched to definitions **by name**. A definition in the caller's own file is
+  preferred; otherwise every definition with that name is linked. Limitation: common
+  method names (`obj.get()`, `.clear()`) can link to unrelated functions — resolving
+  them properly needs type information
 
 ```
 Query: "what happens during checkout?"
@@ -441,6 +479,32 @@ graph TB
 | **Keyword** | BM25 (in-memory) | — | Pickle (disk) | All environments |
 | **Concept** | JSON file | — | Disk | All environments |
 
+Backend notes:
+- **Qdrant** point IDs are UUIDv5 of the chunk's `node_id` (Qdrant only accepts
+  integer/UUID IDs); the original `node_id` is kept in the payload.
+- **ChromaDB** metadata can't hold empty lists, so list fields (`calls`, `inherits`, …)
+  are stored as JSON strings and decoded on read.
+- **Neo4j** nodes are `(:Chunk {id, ns, name, file_path, …})`; functions referenced but
+  not (yet) indexed are id-less stub nodes.
+
+### Projects & Isolation (Namespaces)
+
+Each engine indexes one project. Local stores are separated by `data_dir`; server
+stores (shared by everyone pointed at them) are separated by **namespace**:
+
+| Store | Without namespace | With `namespace="payments-api"` |
+|-------|-------------------|----------------------------------|
+| Local files (ChromaDB, graph, BM25, concepts, cache, hashes) | `data_dir/` | `data_dir/payments-api/` |
+| Qdrant | collection `kitsune_chunks` | collection `kitsune_chunks__payments-api` |
+| Neo4j | nodes with `ns = ""` | nodes with `ns = "payments-api"` (all queries filter on it) |
+
+```python
+engine = RepositoryKnowledgeEngine(namespace="payments-api")   # or KITSUNE_NAMESPACE
+```
+
+`clear_all()` only deletes the engine's own namespace — other projects on the same
+Qdrant/Neo4j are untouched.
+
 ### Environment Configuration
 
 ```bash
@@ -452,7 +516,11 @@ QDRANT_API_KEY=your-api-key
 QDRANT_LOCAL_PATH=./data/qdrant
 
 # Vector store — ChromaDB fallback (dev/CI, no config needed)
-# (just don't set QDRANT_URL — ChromaDB is used automatically)
+# (just don't set QDRANT_URL — ChromaDB is used automatically, under data_dir)
+# CHROMA_PATH=./data/kitsune/chroma   # optional override
+
+# Project isolation on shared servers (optional)
+KITSUNE_NAMESPACE=payments-api
 
 # Graph store — Neo4j (production)
 NEO4J_URI=bolt://localhost:7687
@@ -462,9 +530,13 @@ NEO4J_PASSWORD=your-password
 # Graph store — NetworkX fallback (dev/CI, no config needed)
 # (if Neo4j is unreachable, NetworkX is used automatically)
 
-# LLM — Groq (default)
+# LLM — Groq (default); loaded from kitsune/.env (git-ignored)
 GROQ_API_KEY=your-key
 LLM_MODEL=openai/gpt-oss-20b
+# LLM_REASONING_EFFORT=low   # sent only to reasoning models unless set; "none" disables
+
+# Retrieval
+# KITSUNE_CONTEXT_BUDGET=5000   # max chars of code context per question
 ```
 
 ---
@@ -490,7 +562,7 @@ LLM_MODEL=openai/gpt-oss-20b
 | File parsing | **O(files / workers)** | Parallel ThreadPool (4-8 workers) |
 | Graph load from disk | **O(V + E)** | Pickle binary (10x faster than JSON) |
 | Repeated query | **O(1)** | LRU cache with semantic similarity |
-| Context size | **O(budget)** | Capped at 5,000 chars, whole-chunk dropping |
+| Context size | **O(budget)** | Capped at `KITSUNE_CONTEXT_BUDGET` (default 5,000 chars), whole-chunk dropping |
 
 ---
 
@@ -696,7 +768,7 @@ AST. When you search for `handle_login`, Kitsune automatically pulls in `verify_
 > the retrieval pulls in all their source code — 100,000+ characters — exceeding the LLM's
 > context window.
 
-**Kitsune's solution:** The Context Budget Manager enforces a 5,000-character budget,
+**Kitsune's solution:** The Context Budget Manager enforces a character budget (default 5,000, set via `KITSUNE_CONTEXT_BUDGET`),
 dropping whole chunks (never cutting mid-function) by priority: primary > keyword > deps.
 
 ---

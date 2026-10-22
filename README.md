@@ -18,6 +18,14 @@ pip install sentence-transformers chromadb qdrant-client rank-bm25 networkx \
             tree-sitter tree-sitter-python tree-sitter-javascript tree-sitter-typescript \
             tree-sitter-c tree-sitter-cpp tree-sitter-go tree-sitter-java tree-sitter-rust \
             openai python-dotenv
+# or: pip install -r requirements.txt
+```
+
+The repository root *is* the `kitsune` package, so clone it into a folder named
+`kitsune` and run Python from the folder that contains it:
+
+```bash
+git clone https://github.com/SayantanBong007/-Kitsune.git kitsune
 ```
 
 ### 2. Configure Your API Key
@@ -74,6 +82,9 @@ defaults.
 | `LLM_MODEL` | No | `openai/gpt-oss-20b` | The LLM model to use |
 | `LLM_BASE_URL` | No | `https://api.groq.com/openai/v1` | API base URL (change for OpenAI, OpenRouter, Ollama) |
 | `LLM_API_KEY` | No | — | Alternative API key (takes precedence over `GROQ_API_KEY`) |
+| `LLM_REASONING_EFFORT` | No | `low` for reasoning models | `low`/`medium`/`high`, or `none`. Only sent to models that accept it (gpt-oss, o-series, gpt-5) unless set explicitly |
+| `KITSUNE_NAMESPACE` | No | — | Project name; keeps projects apart on a shared Qdrant/Neo4j (own collection, own graph nodes, own `data_dir` subfolder). Same as `RepositoryKnowledgeEngine(namespace=...)` |
+| `KITSUNE_CONTEXT_BUDGET` | No | `5000` | Max characters of code context per question. Raise it (e.g. `12000`) if your LLM's limits allow — at 5000, one large caller can be dropped |
 
 **Using a different LLM provider?**
 
@@ -421,7 +432,7 @@ networkx>=3.0
 neo4j>=5.0                   # optional (falls back to NetworkX)
 openai>=1.30
 python-dotenv>=1.0
-tree-sitter>=0.21
+tree-sitter>=0.22
 tree-sitter-python>=0.21
 tree-sitter-javascript>=0.21
 tree-sitter-typescript>=0.21
@@ -430,6 +441,27 @@ tree-sitter-cpp>=0.22
 tree-sitter-go>=0.21
 tree-sitter-java>=0.21
 tree-sitter-rust>=0.21
+```
+
+(Also in `requirements.txt`.)
+
+---
+
+## 🧪 Tests
+
+Offline tests (a fake embedder replaces the models, so nothing is downloaded):
+
+```bash
+pip install pytest
+python -m pytest tests -q
+```
+
+Integration tests against live Qdrant + Neo4j (they **wipe** both, so they are opt-in):
+
+```bash
+docker run -d --name kitsune-qdrant -p 6333:6333 qdrant/qdrant
+docker run -d --name kitsune-neo4j -p 7687:7687 -e NEO4J_AUTH=neo4j/kitsune_password neo4j:5-community
+KITSUNE_INTEGRATION=1 python -m pytest tests/test_integration.py -q
 ```
 
 ---

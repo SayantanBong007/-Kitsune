@@ -1,0 +1,18 @@
+sentence-transformers>=2.2
+chromadb>=0.4
+qdrant-client>=1.9          # optional (falls back to ChromaDB)
+rank-bm25>=0.2
+networkx>=3.0
+neo4j>=5.0                  # optional (falls back to NetworkX)
+openai>=1.30
+python-dotenv>=1.0
+numpy
+tree-sitter>=0.22
+tree-sitter-python>=0.21
+tree-sitter-javascript>=0.21
+tree-sitter-typescript>=0.21
+tree-sitter-c>=0.21
+tree-sitter-cpp>=0.22
+tree-sitter-go>=0.21
+tree-sitter-java>=0.21
+tree-sitter-rust>=0.21

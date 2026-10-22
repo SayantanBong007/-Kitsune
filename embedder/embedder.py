@@ -74,7 +74,7 @@ def embed_batch(texts: list[str], batch_size: int = 64) -> list[list[float]]:
     for i in range(0, len(texts), batch_size):
         batch = texts[i:i + batch_size]
         vectors = model.encode(batch, normalize_embeddings=True, show_progress_bar=False)
-        all_vectors.extend(v.tolist() if hasattr(vectors, 'tolist') else
+        all_vectors.extend(vectors.tolist() if hasattr(vectors, 'tolist') else
                            [v.tolist() for v in vectors])
 
         if i % (batch_size * 10) == 0 and i > 0:

@@ -10,9 +10,9 @@ Features:
 from __future__ import annotations
 
 import logging
-import os
 from typing import Iterator
 
+from kitsune.llm import get_llm_client, llm_extra_kwargs, llm_model
 from kitsune.query.hybrid_search import HybridSearcher
 from kitsune.query.router import route_query
 from kitsune.query.synthesizer import Synthesizer
@@ -78,22 +78,19 @@ class IssueInvestigator:
         user_message = f"BUG REPORT:\n{bug_report}\n\nREPOSITORY CONTEXT:\n{context_str}"
 
         # Stream the LLM response
-        from openai import OpenAI
-        client = OpenAI(
-            base_url=os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1"),
-            api_key=os.getenv("GROQ_API_KEY", ""),
-        )
+        client = get_llm_client()
+        model = llm_model()
 
         try:
             response = client.chat.completions.create(
-                model=os.getenv("LLM_MODEL", "openai/gpt-oss-20b"),
+                model=model,
                 messages=[
                     {"role": "system", "content": INVESTIGATOR_PROMPT},
                     {"role": "user", "content": user_message}
                 ],
                 stream=True,
                 temperature=0.2,
-                reasoning_effort="low",
+                **llm_extra_kwargs(model),
             )
 
             for chunk in response:

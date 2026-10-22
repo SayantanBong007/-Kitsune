@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
 from typing import Any
 
 from kitsune.models.chunk import Chunk
@@ -28,6 +29,15 @@ logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "kitsune_chunks"
 VECTOR_SIZE = 384  # bge-small-en-v1.5 dimension
+
+
+def _point_id(node_id: str) -> str:
+    """Map a chunk node_id ('file::name') to a deterministic Qdrant point ID.
+
+    Qdrant only accepts unsigned integers or UUIDs as point IDs, so the
+    node_id is hashed into a UUIDv5. The original node_id is kept in the payload.
+    """
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, node_id))
 
 
 class QdrantVectorStore:
@@ -44,8 +54,9 @@ class QdrantVectorStore:
     """
 
     def __init__(self, url: str | None = None, api_key: str | None = None,
-                 collection_name: str = COLLECTION_NAME):
+                 collection_name: str = COLLECTION_NAME, chroma_path: str | None = None):
         self._collection_name = collection_name
+        self._chroma_path = chroma_path  # used only by the ChromaDB fallback
         self._client = None
         self._fallback = None  # ChromaDB fallback
         self._use_fallback = False
@@ -99,7 +110,7 @@ class QdrantVectorStore:
         if self._use_fallback:
             logger.info("Falling back to ChromaDB vector store.")
             from kitsune.store.vector_store import VectorStore
-            self._fallback = VectorStore()
+            self._fallback = VectorStore(path=self._chroma_path)
 
     @property
     def using_fallback(self) -> bool:
@@ -124,10 +135,11 @@ class QdrantVectorStore:
         points = []
         for chunk, vector in zip(chunks, vectors):
             points.append(PointStruct(
-                id=chunk.node_id,
+                id=_point_id(chunk.node_id),
                 vector=vector,
                 payload={
                     "text": chunk.text,
+                    "node_id": chunk.node_id,
                     **chunk.to_metadata(),
                 },
             ))
@@ -149,12 +161,21 @@ class QdrantVectorStore:
         if self._use_fallback:
             return self._fallback.search(query_vector, k)
 
-        results = self._client.search(
-            collection_name=self._collection_name,
-            query_vector=query_vector,
-            limit=k,
-            with_payload=True,
-        )
+        # qdrant-client >= 1.10 uses query_points; `search` was removed in later versions
+        if hasattr(self._client, "query_points"):
+            results = self._client.query_points(
+                collection_name=self._collection_name,
+                query=query_vector,
+                limit=k,
+                with_payload=True,
+            ).points
+        else:
+            results = self._client.search(
+                collection_name=self._collection_name,
+                query_vector=query_vector,
+                limit=k,
+                with_payload=True,
+            )
 
         output = []
         for hit in results:
@@ -198,7 +219,7 @@ class QdrantVectorStore:
         try:
             points = self._client.retrieve(
                 collection_name=self._collection_name,
-                ids=[node_id],
+                ids=[_point_id(node_id)],
                 with_payload=True,
             )
             if points:
@@ -265,7 +286,7 @@ class QdrantVectorStore:
                 break
             for point in points:
                 payload = point.payload or {}
-                hashes[point.id] = payload.get("hash", "")
+                hashes[payload.get("node_id", point.id)] = payload.get("hash", "")
             offset = next_offset
             if not next_offset:
                 break

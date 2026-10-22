@@ -11,8 +11,9 @@ payload that ArchFox posts to a GitHub PR for Human-in-the-Loop review.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Iterator
+
+from kitsune.llm import get_llm_client, llm_extra_kwargs, llm_model
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +55,8 @@ class FixPlanner:
     """Agent that translates an investigation into a PR Comment Payload."""
 
     def __init__(self):
-        from openai import OpenAI
-        self.client = OpenAI(
-            base_url=os.getenv("LLM_BASE_URL", "https://api.groq.com/openai/v1"),
-            api_key=os.getenv("GROQ_API_KEY", ""),
-        )
-        self.model = os.getenv("LLM_MODEL", "openai/gpt-oss-20b")
+        self.client = get_llm_client()
+        self.model = llm_model()
 
     def generate_payload(self, investigation_result: str, pr_diff: str = "") -> Iterator[str]:
         """Generate the PR Comment Payload and stream it.
@@ -91,7 +88,7 @@ class FixPlanner:
                 ],
                 stream=True,
                 temperature=0.1,
-                reasoning_effort="low",
+                **llm_extra_kwargs(self.model),
             )
 
             for chunk in response:

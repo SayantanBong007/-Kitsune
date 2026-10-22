@@ -8,9 +8,27 @@ Features:
 """
 from __future__ import annotations
 
+import re
+
 from tree_sitter import Node
 
-from kitsune.parser.treesitter_parser import get_node_text
+from kitsune.parser.treesitter_parser import CALL_NODE_TYPES, get_node_text
+
+_CALLEE_SEPARATORS = re.compile(r"\?\.|\.|::|->")
+_IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
+
+_INHERITANCE_CONTAINER_TYPES = (
+    "argument_list", "superclass", "super_interfaces", "type_list", "superclass_list",
+    "class_heritage", "extends_clause", "implements_clause", "base_class_clause",
+)
+_BASE_NAME_TYPES = (
+    "identifier", "type_identifier", "scoped_identifier", "scoped_type_identifier",
+    "qualified_identifier", "attribute", "member_expression", "generic_type",
+)
+
+# Leaf node types that hold a C/C++ function or method name inside a declarator
+_DECLARATOR_NAME_TYPES = ("identifier", "field_identifier", "qualified_identifier",
+                          "destructor_name", "operator_name", "type_identifier")
 
 
 def extract_calls(node: Node, source: bytes) -> set[str]:
@@ -35,16 +53,29 @@ def extract_calls(node: Node, source: bytes) -> set[str]:
     """
     calls: set[str] = set()
 
+    def add(callee_text: str):
+        # Base name from member access in any language:
+        # self.db.query / obj->run / pkg::mod::func / x?.y / Vec::<T>::new
+        base_name = _CALLEE_SEPARATORS.split(callee_text.strip())[-1]
+        match = _IDENTIFIER.match(base_name)
+        if not match:
+            return
+        base_name = match.group(0)
+        # Skip dunders (super().__init__) and 1-char names; keep _private helpers
+        if len(base_name) > 1 and not (base_name.startswith("__") and base_name.endswith("__")):
+            calls.add(base_name)
+
     def walk(n: Node):
-        if n.type in ("call", "call_expression"):
-            for child in n.children:
-                if child.type in ("identifier", "attribute", "member_expression"):
-                    callee_text = get_node_text(child, source)
-                    # Extract base name from attribute access: self.db.query → query
-                    base_name = callee_text.split(".")[-1] if "." in callee_text else callee_text
-                    if base_name and not base_name.startswith("_") and len(base_name) > 1:
-                        calls.add(base_name)
-                    break
+        if n.type in CALL_NODE_TYPES:
+            # "function" field: Python/JS/TS/Go/Rust/C/C++; "name" field: Java
+            callee = n.child_by_field_name("function") or n.child_by_field_name("name")
+            if callee is not None:
+                add(get_node_text(callee, source))
+            else:
+                for child in n.children:
+                    if child.type in ("identifier", "attribute", "member_expression"):
+                        add(get_node_text(child, source))
+                        break
 
         for child in n.children:
             walk(child)
@@ -76,11 +107,16 @@ def extract_inheritance(node: Node, source: bytes) -> list[str]:
 
     def walk(n: Node):
         # Python: argument_list inside class_definition contains base classes
-        # Java: superclass_list / implements_list
-        if n.type in ("argument_list", "superclass_list", "super_interfaces_list"):
+        # Java: superclass / super_interfaces → type_list
+        # JS: class_heritage; TS: class_heritage → extends_clause / implements_clause
+        # C++: base_class_clause
+        if n.type in _INHERITANCE_CONTAINER_TYPES:
             for child in n.children:
-                if child.type in ("identifier", "type_identifier", "scoped_identifier"):
-                    name = get_node_text(child, source)
+                if child.type in _BASE_NAME_TYPES:
+                    # models.Model / React.Component / ns::Base / List<T> → bare
+                    # class name, so EXTENDS edges match the class's own chunk
+                    name = get_node_text(child, source).split("<")[0]
+                    name = _CALLEE_SEPARATORS.split(name)[-1].strip()
                     if name and name not in parents:
                         parents.append(name)
 
@@ -179,6 +215,20 @@ def extract_decorators(node: Node, source: bytes) -> list[str]:
 
 def extract_name(node: Node, source: bytes) -> str:
     """Extract the identifier name from a function or class node."""
+    # Most grammars expose a "name" field (this also covers Go's field_identifier
+    # method names, which the child scan below misses)
+    name_node = node.child_by_field_name("name")
+    if name_node is not None:
+        return get_node_text(name_node, source)
+
+    # C/C++: int foo(int x) → declarator(function_declarator) → declarator(identifier)
+    declarator = node.child_by_field_name("declarator")
+    while declarator is not None:
+        if declarator.type in _DECLARATOR_NAME_TYPES:
+            # Foo::bar → bar, so it matches bare call names
+            return get_node_text(declarator, source).split("::")[-1]
+        declarator = declarator.child_by_field_name("declarator")
+
     for child in node.children:
         if child.type in ("identifier", "type_identifier", "name"):
             return get_node_text(child, source)

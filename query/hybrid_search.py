@@ -15,7 +15,9 @@ Features:
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
+import os
 import time
 from typing import TypedDict
 
@@ -67,8 +69,8 @@ class HybridSearcher:
         logger.info("HybridSearcher: using shared embedding model singleton.")
         self._embedder = get_model()
 
-    def search(self, query: str, k_primary: int = 5, plan: QueryPlan | None = None,
-               max_context_chars: int = DEFAULT_BUDGET) -> SearchResult:
+    def search(self, query: str, k_primary: int | None = None, plan: QueryPlan | None = None,
+               max_context_chars: int | None = None) -> SearchResult:
         """Run the hybrid search pipeline.
 
         If a QueryPlan is provided, uses it to select the retrieval strategy.
@@ -79,12 +81,13 @@ class HybridSearcher:
         query:
             Natural language question or code query.
         k_primary:
-            Number of primary chunks to retrieve (overridden by plan if provided).
+            Number of primary chunks to retrieve. If None, the plan's top_k is used.
         plan:
             Optional QueryPlan from the query router.
         max_context_chars:
             Maximum total characters of retrieved context. Prevents LLM context
             window overflow on large codebases where hub functions have many deps.
+            Defaults to KITSUNE_CONTEXT_BUDGET or DEFAULT_BUDGET.
 
         Returns
         -------
@@ -99,10 +102,17 @@ class HybridSearcher:
         else:
             metrics.query_type = plan.query_type
 
+        if max_context_chars is None:
+            max_context_chars = int(os.getenv("KITSUNE_CONTEXT_BUDGET", DEFAULT_BUDGET))
+
+        # Every strategy except keyword_only starts from semantic entry points
+        # (graph_only queries need them to know where to start traversing).
+        uses_semantic = plan.strategy in ("hybrid", "direct_lookup", "graph_only")
+
         # ── Cache check: return instantly for repeated/similar queries ──
         # Embed the query once for both cache lookup and semantic search
         query_vector = None
-        if plan.strategy in ("hybrid", "direct_lookup"):
+        if uses_semantic:
             query_vector = self._embedder.encode(
                 query, normalize_embeddings=True
             ).tolist()
@@ -111,11 +121,16 @@ class HybridSearcher:
             cached = self._cache.get(query, query_vector=query_vector)
             if cached is not None:
                 logger.info(f"Cache HIT — returning cached result for '{query[:50]}...'")
-                cached["metrics"].query_type = metrics.query_type + " (cached)"
+                # Copy so the cached entry itself is not mutated on every hit
+                cached = dict(cached)
+                cached["query_type"] = metrics.query_type + " (cached)"
+                cached["metrics"] = dataclasses.replace(
+                    cached["metrics"], query_type=cached["query_type"]
+                )
                 return cached
 
-        # Use plan's top_k if not explicitly overridden
-        effective_k = k_primary if k_primary != 5 else plan.top_k
+        # Use plan's top_k unless explicitly overridden
+        effective_k = k_primary if k_primary is not None else plan.top_k
 
         primary_chunks: list[dict] = []
         dependency_chunks: list[dict] = []
@@ -124,7 +139,7 @@ class HybridSearcher:
 
         with Timer(metrics, "retrieval_time_seconds"):
             # ── Step 1: Semantic search (Qdrant/ChromaDB) ────────────────
-            if plan.strategy in ("hybrid", "direct_lookup"):
+            if uses_semantic:
                 # query_vector was already computed for cache lookup
                 primary_chunks = self._vector.search(query_vector, k=effective_k)
                 logger.info(f"Semantic search: {len(primary_chunks)} primary chunks")
@@ -142,12 +157,45 @@ class HybridSearcher:
 
             # ── Step 3: Graph traversal (multi-hop) ───────────────────────
             if plan.use_graph and primary_chunks:
-                dependency_names: set[str] = set()
+                # "What calls X?" / "What breaks if X changes?" need the
+                # callers (upstream) too, not only what X calls.
+                include_callers = plan.query_type in ("dependency", "impact")
+                # Ordered by priority, because the context budget below drops
+                # from the end: callers first for caller/impact questions,
+                # and direct (1-hop) neighbours before transitive ones.
+                callers_near: list[str] = []
+                callers_far: list[str] = []
+                deps_near: list[str] = []
+                deps_far: list[str] = []
                 for chunk in primary_chunks:
                     chunk_name = chunk.get("name") or chunk.get("qualified_name", "")
-                    if chunk_name:
+                    if chunk_name and chunk_name != "<module>":
+                        near = self._graph.get_dependencies(chunk_name, depth=1)
                         deps = self._graph.get_dependencies(chunk_name, depth=plan.graph_depth)
-                        dependency_names.update(deps)
+                        deps_near.extend(sorted(near))
+                        deps_far.extend(sorted(deps))
+                        graph_paths[chunk_name] = {"calls": sorted(deps)}
+                        if include_callers:
+                            near = self._graph.get_upstream_callers(chunk_name, depth=1)
+                            callers = self._graph.get_upstream_callers(
+                                chunk_name, depth=plan.graph_depth
+                            )
+                            callers_near.extend(sorted(near))
+                            callers_far.extend(sorted(callers))
+                            graph_paths[chunk_name]["called_by"] = sorted(callers)
+                dependency_names = list(dict.fromkeys(
+                    callers_near + deps_near + callers_far + deps_far
+                ))
+
+                # Where each related function lives — the budget may drop its
+                # code, and without this the LLM guesses the file.
+                locations = {}
+                for name in dependency_names:
+                    meta = self._graph.get_node_metadata(name) or {}
+                    if meta.get("file_path"):
+                        locations[name] = f"{meta['file_path']}:{meta.get('start_line', '?')}"
+                if locations:
+                    graph_paths["locations"] = locations
 
                 # Fetch dependency code from vector store
                 primary_names = {c.get("name") for c in primary_chunks}

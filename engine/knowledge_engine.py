@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 
 from kitsune.concepts.extractor import ConceptExtractor
 from kitsune.concepts.store import ConceptStore
@@ -26,9 +27,15 @@ from kitsune.query.router import route_query
 from kitsune.query.synthesizer import Synthesizer
 from kitsune.store.graph_store import GraphStore
 from kitsune.store.keyword_store import KeywordStore
+from kitsune.store.qdrant_store import COLLECTION_NAME as QDRANT_COLLECTION
 from kitsune.store.qdrant_store import QdrantVectorStore
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_namespace(namespace: str) -> str:
+    """Restrict a namespace to characters valid in collection and folder names."""
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", namespace.strip()).strip("_")
 
 
 class RepositoryKnowledgeEngine:
@@ -42,23 +49,53 @@ class RepositoryKnowledgeEngine:
     answer = engine.ask("how does authentication work?")
     """
 
-    def __init__(self, data_dir: str | None = None):
+    def __init__(self, data_dir: str | None = None, namespace: str | None = None):
+        """
+        Parameters
+        ----------
+        data_dir:
+            Where local stores (ChromaDB, NetworkX graph, BM25, concepts,
+            cache, file hashes) are kept. Defaults to kitsune/data/kitsune.
+        namespace:
+            Name of the project this engine indexes (e.g. "payments-api").
+            Keeps projects apart when several share one Qdrant/Neo4j server:
+            its own Qdrant collection, its own nodes in Neo4j, and its own
+            subfolder of data_dir. Defaults to KITSUNE_NAMESPACE, else none
+            (a single shared index, the original behavior).
+        """
         if data_dir is None:
             base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
             data_dir = os.path.join(base_dir, "data", "kitsune")
 
+        self.namespace = _sanitize_namespace(
+            namespace if namespace is not None else os.getenv("KITSUNE_NAMESPACE", "")
+        )
+        if self.namespace:
+            data_dir = os.path.join(data_dir, self.namespace)
         os.makedirs(data_dir, exist_ok=True)
+        self.data_dir = data_dir
 
         # Initialize vector store — Qdrant (server-based, scalable) with
         # automatic ChromaDB fallback if Qdrant is not configured.
         # Set QDRANT_URL env var to enable Qdrant; otherwise uses ChromaDB.
-        self.vector_store = QdrantVectorStore()
+        # ChromaDB lives in data_dir with the other stores (CHROMA_PATH overrides),
+        # so each engine/data_dir has its own index instead of sharing one
+        # collection under the current working directory.
+        chroma_path = os.getenv("CHROMA_PATH")
+        if chroma_path and self.namespace:
+            chroma_path = os.path.join(chroma_path, self.namespace)
+        self.vector_store = QdrantVectorStore(
+            collection_name=(f"{QDRANT_COLLECTION}__{self.namespace}"
+                             if self.namespace else QDRANT_COLLECTION),
+            chroma_path=chroma_path or os.path.join(data_dir, "chroma"),
+        )
         if self.vector_store.using_fallback:
             logger.info("Vector store: ChromaDB (embedded mode)")
         else:
             logger.info("Vector store: Qdrant (server mode)")
 
-        self.graph_store = GraphStore(persist_path=os.path.join(data_dir, "graph.pkl"))
+        self.graph_store = GraphStore(persist_path=os.path.join(data_dir, "graph.pkl"),
+                                      namespace=self.namespace)
         self.keyword_store = KeywordStore(persist_path=os.path.join(data_dir, "bm25_index.pkl"))
         self.concept_store = ConceptStore(persist_path=os.path.join(data_dir, "concepts.json"))
 
@@ -71,6 +108,9 @@ class RepositoryKnowledgeEngine:
             vector_store=self.vector_store,
             graph_store=self.graph_store,
             keyword_store=self.keyword_store,
+            # Keep incremental-indexing hashes with this engine's stores, not
+            # inside the indexed repo (which may be shared by several indexes)
+            hash_dir=data_dir,
         )
         self.searcher = HybridSearcher(
             vector_store=self.vector_store,
@@ -110,6 +150,9 @@ class RepositoryKnowledgeEngine:
         metrics = self.indexer.index_directory(
             repo_path, extensions=self.SUPPORTED_EXTENSIONS, incremental=incremental
         )
+
+        # Cached retrieval results may reference code that just changed
+        self.cache.clear()
 
         # Extract and store concepts (S12) — from ALREADY INDEXED data,
         # not by re-parsing the repo (which would defeat incremental indexing)
@@ -162,7 +205,7 @@ class RepositoryKnowledgeEngine:
 
     # ── Querying ──────────────────────────────────────────────────────────
 
-    def search_semantic(self, query: str, top_k: int = 5) -> str:
+    def search_semantic(self, query: str, top_k: int | None = None) -> str:
         """Run hybrid search and return a formatted context string.
 
         This is the main entry point for ArchFox's review agents.
@@ -171,7 +214,7 @@ class RepositoryKnowledgeEngine:
         results = self.searcher.search(query, k_primary=top_k, plan=plan)
         return self.synthesizer.format_context(results)
 
-    def search(self, query: str, top_k: int = 5) -> dict:
+    def search(self, query: str, top_k: int | None = None) -> dict:
         """Run hybrid search and return raw results (not formatted).
 
         Returns the full SearchResult dict for programmatic use.

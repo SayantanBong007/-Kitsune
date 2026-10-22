@@ -9,6 +9,7 @@ Features:
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Any, cast
@@ -21,6 +22,33 @@ from kitsune.models.chunk import Chunk
 logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "kitsune_chunks"
+
+# Chunk metadata fields that hold lists (see Chunk.to_metadata)
+_LIST_FIELDS = ("calls", "inherits", "imports", "decorators")
+
+
+def _encode_metadata(meta: dict) -> dict:
+    """Make chunk metadata ChromaDB-safe.
+
+    ChromaDB rejects empty lists (and older versions reject all lists), but
+    most chunks have an empty `inherits` or `decorators` list. List values are
+    stored as JSON strings and decoded again by `_decode_metadata`.
+    """
+    return {k: json.dumps(v) if isinstance(v, (list, set, tuple)) else v
+            for k, v in meta.items()}
+
+
+def _decode_metadata(meta: dict) -> dict:
+    """Reverse `_encode_metadata` — turn JSON-encoded list fields back into lists."""
+    decoded = dict(meta)
+    for key in _LIST_FIELDS:
+        value = decoded.get(key)
+        if isinstance(value, str):
+            try:
+                decoded[key] = json.loads(value)
+            except ValueError:
+                decoded[key] = [value] if value else []
+    return decoded
 
 
 class VectorStore:
@@ -64,7 +92,7 @@ class VectorStore:
 
         ids = [c.node_id for c in chunks]
         documents = [c.text for c in chunks]
-        metadatas = [c.to_metadata() for c in chunks]
+        metadatas = [_encode_metadata(c.to_metadata()) for c in chunks]
 
         self._collection.upsert(
             ids=ids,
@@ -98,7 +126,7 @@ class VectorStore:
         output = []
         for doc, meta, dist in zip(docs, metas, distances):
             score = round(1.0 - dist, 4)  # distance → similarity
-            output.append({**meta, "text": doc, "score": score})
+            output.append({**_decode_metadata(meta), "text": doc, "score": score})
 
         return output
 
@@ -118,7 +146,7 @@ class VectorStore:
 
         for doc, meta in zip(docs, metas):
             if doc and meta:
-                output.append({**meta, "text": doc})
+                output.append({**_decode_metadata(meta), "text": doc})
 
         return output
 
@@ -130,7 +158,7 @@ class VectorStore:
         )
         if not results["documents"]:
             return None
-        return {**results["metadatas"][0], "text": results["documents"][0]}
+        return {**_decode_metadata(results["metadatas"][0]), "text": results["documents"][0]}
 
     def get_by_file(self, file_path: str) -> list[dict]:
         """Fetch all chunks from a specific file."""
@@ -143,7 +171,7 @@ class VectorStore:
             return output
         for doc, meta in zip(results["documents"], results["metadatas"]):
             if doc and meta:
-                output.append({**meta, "text": doc})
+                output.append({**_decode_metadata(meta), "text": doc})
         return output
 
     def delete_by_file(self, file_path: str):
@@ -181,7 +209,7 @@ class VectorStore:
         output = []
         for doc, meta in zip(results["documents"], results["metadatas"]):
             if doc and meta:
-                output.append({**meta, "text": doc})
+                output.append({**_decode_metadata(meta), "text": doc})
         return output
 
     def clear(self):

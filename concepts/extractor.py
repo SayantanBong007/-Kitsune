@@ -176,7 +176,8 @@ class ConceptExtractor:
                 # Format: "file_path::qualified_name"
                 parts = chunk_id.split("::")
                 if len(parts) >= 2:
-                    name = parts[-1].split(".")[-1]  # last part of qualified name
+                    # last part of qualified name, minus any "@L<line>" id suffix
+                    name = parts[-1].split("@")[0].split(".")[-1]
                     func_to_concept[name] = concept.name
 
         # For each chunk, check if its calls belong to another concept
