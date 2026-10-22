@@ -28,6 +28,13 @@ from kitsune.parser.treesitter_parser import (
     parse_file,
     get_language_name,
 )
+from kitsune.parser.semantics import (
+    extract_call_refs,
+    extract_field_types,
+    extract_import_map,
+    extract_var_types,
+    go_receiver,
+)
 from kitsune.parser.extractor import (
     extract_calls,
     extract_decorators,
@@ -47,6 +54,9 @@ MAX_RECURSION_DEPTH = 1
 # of roughly this many characters, so one file can't produce a giant chunk.
 MAX_MODULE_CHUNK_CHARS = 2000
 
+# Functions longer than this have their nested functions chunked separately
+MAX_FUNCTION_CHARS = 3000
+
 
 def _node_type_to_chunk_type(node_type: str) -> str:
     """Map a tree-sitter node type to a Kitsune chunk type."""
@@ -63,6 +73,41 @@ _CALLEE_TAIL = re.compile(r"\?\.|\.")  # window.LF → LF
 
 CLASS_BODY_TYPES = ("block", "class_body", "declaration_list", "module",
                     "field_declaration_list", "interface_body")
+
+
+def _extend_comment_run(run: list[Node], comment: Node) -> list[Node]:
+    """Add a comment to the current run; a blank line starts a new run."""
+    if run and comment.start_point[0] > run[-1].end_point[0] + 1:
+        return [comment]
+    return run + [comment]
+
+
+def _adjacent_comments(run: list[Node], node: Node) -> list[Node]:
+    """The comment run if it ends on the line right above `node`, else []."""
+    if run and run[-1].end_point[0] >= node.start_point[0] - 1:
+        return run
+    return []
+
+
+def _comment_text(comments: list[Node], source: bytes) -> str:
+    """Doc comment text without //, #, /*, * markers."""
+    lines = []
+    for comment in comments:
+        for line in get_node_text(comment, source).splitlines():
+            line = re.sub(r"^\s*(?:///?|#+|/\*\*?|\*/|\*)\s?", "", line)
+            line = re.sub(r"\s*\*/\s*$", "", line).strip()
+            if line:
+                lines.append(line)
+    return " ".join(lines)
+
+
+def _is_split_method(node: Node, source: bytes) -> bool:
+    """Is `node` a method directly in a class body (chunked on its own)?"""
+    parent = node.parent
+    if parent is None or parent.type not in CLASS_BODY_TYPES:
+        return False
+    unwrapped = _unwrap(node, source)
+    return unwrapped is not None and unwrapped[0].type in FUNCTION_NODE_TYPES
 
 
 def _calls_outside_methods(node: Node, source: bytes) -> set[str]:
@@ -84,6 +129,24 @@ def _calls_outside_methods(node: Node, source: bytes) -> set[str]:
     return calls
 
 
+def _nested_functions(definition: Node, source: bytes) -> list[tuple[Node, list[Node]]]:
+    """Function definitions directly inside a function body, with their doc comments."""
+    body = definition.child_by_field_name("body")
+    if body is None:
+        return []
+    found: list[tuple[Node, list[Node]]] = []
+    pending: list[Node] = []
+    for stmt in body.named_children:
+        if stmt.type == "comment":
+            pending = _extend_comment_run(pending, stmt)
+            continue
+        unwrapped = _unwrap(stmt, source)
+        if unwrapped is not None and unwrapped[0].type in FUNCTION_NODE_TYPES:
+            found.append((stmt, _adjacent_comments(pending, stmt)))
+        pending = []
+    return found
+
+
 def _class_outline(node: Node, definition: Node, source: bytes) -> str:
     """Class source with each method body replaced by `...` (signatures kept).
 
@@ -100,7 +163,11 @@ def _class_outline(node: Node, definition: Node, source: bytes) -> str:
                 body = unwrapped[0].child_by_field_name("body")
                 if body is not None:
                     bodies.append(body)
+    return _outline(node, bodies, source)
 
+
+def _outline(node: Node, bodies: list[Node], source: bytes) -> str:
+    """Source of `node` with the given body blocks replaced by `...`."""
     parts: list[bytes] = []
     pos = node.start_byte
     for body in sorted(bodies, key=lambda b: b.start_byte):
@@ -229,6 +296,7 @@ def chunk_file(file_path: str | Path, max_depth: int = MAX_RECURSION_DEPTH) -> l
     chunks: list[Chunk] = []
     module_level_nodes: list[Node] = []
     file_imports = extract_imports(root_node, source)
+    file_import_map = extract_import_map(root_node, source)
 
     def flush_module_nodes():
         """Turn any accumulated module-level nodes into a single Chunk."""
@@ -245,8 +313,15 @@ def chunk_file(file_path: str | Path, max_depth: int = MAX_RECURSION_DEPTH) -> l
 
         # Extract calls from module-level code too
         calls = extract_calls(first, source)
-        for n in meaningful[1:]:
-            calls |= extract_calls(n, source)
+        call_refs: set[str] = set()
+        var_types: dict[str, str] = {}
+        for n in meaningful:
+            if n is not first:
+                calls |= extract_calls(n, source)
+            call_refs.update(extract_call_refs(n, source))
+            # module-level `gateway = StripeGateway(...)` types calls in this file
+            for var, typ in extract_var_types(n, source).items():
+                var_types.setdefault(var, typ)
 
         chunks.append(Chunk(
             text=combined_text,
@@ -258,21 +333,40 @@ def chunk_file(file_path: str | Path, max_depth: int = MAX_RECURSION_DEPTH) -> l
             language=language,
             calls=calls,
             imports=file_imports,
+            call_refs=sorted(call_refs),
+            var_types=var_types,
+            import_map=file_import_map,
         ))
         module_level_nodes.clear()
 
-    def process_node(node: Node, scope: str = "", depth: int = 0):
+    def process_node(node: Node, scope: str = "", depth: int = 0,
+                     comments: list[Node] | None = None):
         """Process a chunk-boundary node, optionally recursing into classes.
 
         `node` may be a wrapper (decorated/exported definition): its text,
         line range, and decorators are used, while the type, name, docstring,
         and inheritance come from the definition inside it.
+        `comments` are doc comments directly above it (// ..., /** ... */):
+        they become part of the chunk and its docstring.
         """
         definition, name_override = _unwrap(node, source) or (node, "")
         chunk_type = _node_type_to_chunk_type(definition.type)
         name = name_override or extract_name(definition, source)
         docstring = extract_docstring(definition, source)
         text = get_node_text(node, source)
+        comments = comments or []
+        if comments and not docstring:
+            docstring = _comment_text(comments, source)
+
+        var_types = extract_var_types(definition, source) if chunk_type == "function" else {}
+        receiver = go_receiver(definition, source)
+        if receiver is not None:
+            # Go methods live outside their struct: func (s *Server) Start()
+            # → scope "Server", and `s` is a Server inside the method
+            receiver_var, receiver_type = receiver
+            scope = scope or receiver_type
+            if receiver_var:
+                var_types[receiver_var] = receiver_type
 
         # Extract all relationships DURING chunking (no re-parsing later!)
         splits_methods = chunk_type == "class" and depth < max_depth
@@ -280,20 +374,44 @@ def chunk_file(file_path: str | Path, max_depth: int = MAX_RECURSION_DEPTH) -> l
             # Methods become their own chunks — don't credit their calls to the
             # class too, or every caller/impact query double-counts them.
             calls = _calls_outside_methods(node, source)
+            call_refs = extract_call_refs(node, source, skip=lambda n: _is_split_method(n, source))
             # ...and don't repeat their bodies: the class chunk becomes an
             # outline, so one big class can't fill the whole context budget.
             text = _class_outline(node, definition, source)
         else:
             calls = extract_calls(node, source)
+            call_refs = extract_call_refs(node, source)
+
+        # Large functions with nested helpers (closures, inner defs): the
+        # helpers become their own chunks and the parent an outline, so one
+        # big function doesn't swallow the context budget.
+        nested = _nested_functions(definition, source) \
+            if chunk_type == "function" and depth <= max_depth and len(text) > MAX_FUNCTION_CHARS else []
+        if nested:
+            nested_nodes = {id(n) for n, _ in nested}
+            skip = lambda n: id(n) in nested_nodes  # noqa: E731
+            call_refs = extract_call_refs(node, source, skip=skip)
+            calls = {ref.partition("|")[2] for ref in call_refs}
+            bodies = [b for b in (_unwrap(n, source)[0].child_by_field_name("body") for n, _ in nested)
+                      if b is not None]
+            text = _outline(node, bodies, source)
+
         inherits = extract_inheritance(definition, source) if chunk_type == "class" else []
         decorators = extract_decorators(node, source)
+        field_types = extract_field_types(definition, source) if chunk_type == "class" else {}
+
+        start_line = get_node_start_line(node)
+        if comments:
+            text = source[comments[0].start_byte:node.start_byte].decode(
+                "utf-8", errors="replace") + text
+            start_line = get_node_start_line(comments[0])
 
         chunk = Chunk(
             text=text,
             chunk_type=chunk_type,
             name=name,
             file_path=str(path),
-            start_line=get_node_start_line(node),
+            start_line=start_line,
             end_line=get_node_end_line(node),
             scope=scope,
             docstring=docstring,
@@ -302,28 +420,51 @@ def chunk_file(file_path: str | Path, max_depth: int = MAX_RECURSION_DEPTH) -> l
             inherits=inherits,
             imports=file_imports if not scope else [],  # only top-level gets imports
             decorators=decorators,
+            call_refs=call_refs,
+            var_types=var_types,
+            field_types=field_types,
         )
         chunks.append(chunk)
+
+        for inner, doc in nested:
+            process_node(inner, scope=chunk.qualified_name, depth=max_depth + 1, comments=doc)
 
         # Recursively chunk methods inside classes (S8)
         if splits_methods:
             child_scope = chunk.qualified_name
             for child in definition.children:
                 if child.type in CLASS_BODY_TYPES:
+                    pending: list[Node] = []
                     for inner in child.children:
+                        if inner.type == "comment":
+                            pending = _extend_comment_run(pending, inner)
+                            continue
+                        doc = _adjacent_comments(pending, inner)
+                        pending = []
                         unwrapped = _unwrap(inner, source)
                         if unwrapped is None:
                             continue
                         inner_type = unwrapped[0].type
                         if inner_type in FUNCTION_NODE_TYPES:
-                            process_node(inner, scope=child_scope, depth=depth + 1)
+                            process_node(inner, scope=child_scope, depth=depth + 1, comments=doc)
                         elif inner_type in CLASS_NODE_TYPES and depth + 1 < max_depth:
-                            process_node(inner, scope=child_scope, depth=depth + 1)
+                            process_node(inner, scope=child_scope, depth=depth + 1, comments=doc)
 
     def walk_top_level(children: list[Node], scope: str = ""):
         module_chars = 0
+        pending: list[Node] = []  # comment run that may document the next definition
         for child in children:
+            if child.type == "comment":
+                pending = _extend_comment_run(pending, child)
+                continue
             iife = _iife_body(child, source)
+            is_definition = iife is None and _unwrap(child, source) is not None
+            doc = _adjacent_comments(pending, child) if is_definition else []
+            leftover = [c for c in pending if c not in doc]
+            pending = []
+            if leftover:
+                module_level_nodes.extend(leftover)
+                module_chars += sum(c.end_byte - c.start_byte + 1 for c in leftover)
             if iife is not None:
                 # (() => { ... })() wraps a whole file — chunk its contents
                 # as if they were top-level instead of one giant module chunk
@@ -333,9 +474,9 @@ def chunk_file(file_path: str | Path, max_depth: int = MAX_RECURSION_DEPTH) -> l
                 walk_top_level(body.named_children, inner_scope)
                 flush_module_nodes()
                 module_chars = 0
-            elif _unwrap(child, source) is not None:
+            elif is_definition:
                 flush_module_nodes()
-                process_node(child, scope=scope)
+                process_node(child, scope=scope, comments=doc)
                 module_chars = 0
             else:
                 # Cap module chunks so long runs of top-level code are split
@@ -345,6 +486,8 @@ def chunk_file(file_path: str | Path, max_depth: int = MAX_RECURSION_DEPTH) -> l
                     module_chars = 0
                 module_level_nodes.append(child)
                 module_chars += size
+        # Trailing comments with nothing after them stay module-level
+        module_level_nodes.extend(pending)
 
     # Walk direct children of the module root
     walk_top_level(root_node.children)

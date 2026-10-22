@@ -3,3 +3,4 @@ data/
 __pycache__/
 *.pyc
 .kitsune_hashes.json
+eval/results/

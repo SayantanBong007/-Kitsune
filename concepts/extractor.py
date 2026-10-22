@@ -18,6 +18,7 @@ Features:
 from __future__ import annotations
 
 import logging
+import os
 import re
 from collections import Counter, defaultdict
 from typing import Dict, List, Set
@@ -85,6 +86,66 @@ def _name_to_concept(name: str) -> str:
     return concept.capitalize() if concept else name.capitalize()
 
 
+# Folder/file/word parts that describe code structure, not a business domain
+_GENERIC = _STOPWORDS | {
+    "src", "lib", "libs", "app", "apps", "pkg", "internal", "cmd", "core", "common", "shared",
+    "util", "utils", "utility", "utilities", "helper", "helpers", "misc", "base", "abstract",
+    "model", "models", "type", "types", "interface", "interfaces", "schema", "schemas",
+    "test", "tests", "spec", "specs", "index", "mod", "legacy", "vendor", "dist", "build",
+    "scripts", "script", "store", "stores", "service", "services", "controller", "controllers",
+    "handler", "handlers", "view", "views", "component", "components", "ui", "page", "pages",
+    "public", "static", "assets", "impl", "manager", "managers", "module", "modules", "package",
+    "constructor", "default", "global", "globals", "constants", "const", "http", "io",
+    "create", "update", "delete", "remove", "add", "build", "make", "load", "save", "fetch",
+    "send", "handle", "process", "parse", "render", "check", "validate", "compute", "find",
+    "list", "show", "do", "apply", "full", "name", "new", "item", "items", "obj", "object",
+    "dict", "str", "int", "bool", "json", "to", "as", "repr", "eq", "hash",
+}
+_SUFFIXES = re.compile(
+    r"(Service|Controller|Manager|Handler|Repository|Repo|Factory|Builder|Provider|Adapter|"
+    r"Wrapper|Client|Agent|Helper|Util|Utils|Config|Model|Schema|View|Router|Middleware|"
+    r"Interceptor|Listener|Observer|Store|Gateway|Impl|Base|Mixin|Interface)$"
+)
+
+
+def _domain_word(text: str) -> str:
+    """First non-generic word of a name, singular and capitalized ("" if none).
+
+    "payments" → Payment, "notesStore" → Note, "send_receipt" → Receipt, "utils" → "".
+    """
+    words = re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+", text.replace("-", "_"))
+    for word in words:
+        w = word.lower()
+        if len(w) < 2 or w in _GENERIC or w.isdigit():
+            continue
+        if w.endswith("ies") and len(w) > 4:
+            w = w[:-3] + "y"
+        elif w.endswith("s") and not w.endswith("ss") and len(w) > 3:
+            w = w[:-1]
+        if w in _GENERIC:
+            continue
+        return w.capitalize()
+    return ""
+
+
+def _concept_for(chunk: Chunk, root: str) -> str:
+    """Concept a chunk belongs to: domain folder → owning class → file → name."""
+    rel = os.path.relpath(chunk.file_path, root) if root else chunk.file_path
+    parts = rel.replace("\\", "/").split("/")
+    for folder in reversed(parts[:-1]):
+        word = _domain_word(folder)
+        if word:
+            return word
+    owner = chunk.scope.split(".")[0] if chunk.scope else (
+        chunk.name if chunk.chunk_type == "class" else "")
+    if owner:
+        word = _domain_word(_SUFFIXES.sub("", owner) or owner)
+        if word:
+            return word
+    word = _domain_word(os.path.splitext(parts[-1])[0])
+    return word or _domain_word(chunk.name)
+
+
 class ConceptExtractor:
     """Extracts business concepts from indexed chunks.
 
@@ -108,15 +169,20 @@ class ConceptExtractor:
         -------
         List of Concept objects, sorted by chunk count (descending).
         """
-        # Step 1: Assign chunks to concepts based on naming patterns
+        # Step 1: Assign chunks to concepts by where the code lives:
+        # domain folder (payments/) → owning class (StripeGateway) → file name
         concept_chunks: dict[str, set[str]] = defaultdict(set)
         concept_keywords: dict[str, set[str]] = defaultdict(set)
+        dirs = {os.path.dirname(c.file_path) for c in chunks if c.file_path}
+        root = os.path.commonpath(list(dirs)) if dirs else ""
 
         for chunk in chunks:
             if chunk.name == "<module>" or not chunk.name:
                 continue
 
-            concept_name = _name_to_concept(chunk.name)
+            concept_name = _concept_for(chunk, root)
+            if not concept_name:
+                continue  # nothing domain-like about it (e.g. utils/helpers.py:main)
             concept_chunks[concept_name].add(chunk.node_id)
 
             # Collect keywords from name, docstring, and file path

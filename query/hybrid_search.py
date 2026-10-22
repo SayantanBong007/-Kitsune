@@ -218,10 +218,11 @@ class HybridSearcher:
             # ── Step 5: Context budget management ─────────────────────────
             # On large codebases, a hub function can pull in hundreds of
             # dependency chunks. Apply a character budget to prevent LLM
-            # context window overflow — drops whole chunks, never cuts mid-function.
+            # context window overflow — drops what doesn't fit and condenses
+            # oversized chunks to their most query-relevant lines.
             budget_result = apply_context_budget(
                 primary_chunks, dependency_chunks, keyword_chunks,
-                max_chars=max_context_chars
+                max_chars=max_context_chars, query=query,
             )
             primary_chunks = budget_result.primary_chunks
             dependency_chunks = budget_result.dependency_chunks

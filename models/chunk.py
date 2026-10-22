@@ -81,6 +81,23 @@ class Chunk:
     hash: str = ""
     concept: str = ""
     id_suffix: str = ""      # disambiguates repeated names in one file (overloads, setters)
+    # Facts for call resolution (graph/resolver.py) — kept in the graph store only
+    call_refs: list[str] = field(default_factory=list)       # "receiver|name" per call site
+    var_types: dict[str, str] = field(default_factory=dict)  # variable → type name
+    field_types: dict[str, str] = field(default_factory=dict)  # class field → type name
+    import_map: dict[str, str] = field(default_factory=dict)  # local name → module (module chunks)
+
+    def resolve_info(self) -> dict:
+        """Everything the call resolver needs about this chunk."""
+        return {
+            "call_refs": self.call_refs,
+            "var_types": self.var_types,
+            "field_types": self.field_types,
+            "import_map": self.import_map,
+            "inherits": self.inherits,
+            "chunk_type": self.chunk_type,
+            "scope": self.scope,
+        }
 
     def __post_init__(self):
         if not self.hash:

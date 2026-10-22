@@ -229,7 +229,7 @@ def test_go_methods_and_structs(tmp_path):
         """))
     names = _by_name(chunks)
     assert "Server" in names and names["Server"].chunk_type == "class"
-    assert {"listen", "Println"} <= names["Start"].calls
+    assert {"listen", "Println"} <= names["Server.Start"].calls
 
 
 # ── End-to-end engine (ChromaDB + NetworkX) ──────────────────────────────────

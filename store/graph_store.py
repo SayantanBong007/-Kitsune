@@ -10,6 +10,7 @@ Features:
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import pickle
@@ -27,6 +28,21 @@ EDGE_EXTENDS = "EXTENDS"          # class inheritance
 EDGE_IMPORTS = "IMPORTS"          # module-level import
 EDGE_DECORATED_BY = "DECORATED_BY"
 _EDGE_TYPES = (EDGE_CALLS, EDGE_EXTENDS, EDGE_IMPORTS, EDGE_DECORATED_BY)
+
+# Cypher filter: skip call edges the resolver marked ambiguous
+_NO_AMBIGUOUS = "AND ALL(r IN relationships(p) WHERE NOT coalesce(r.ambiguous, false))"
+
+
+def _related_record(attrs: dict, depth: int) -> dict:
+    """Shape a graph node into a get_related() result."""
+    name = attrs.get("name") or ""
+    return {
+        "name": name,
+        "qualified_name": attrs.get("qualified_name") or name,
+        "file_path": attrs.get("file_path"),
+        "start_line": attrs.get("start_line"),
+        "depth": depth,
+    }
 
 
 class GraphStore:
@@ -156,6 +172,7 @@ class GraphStore:
         if self.use_fallback:
             assert self.nx_graph is not None
             attrs = chunk.to_metadata()
+            attrs["resolve"] = chunk.resolve_info()  # facts for the call resolver
             self.nx_graph.add_node(chunk.node_id, **attrs)
             self._index_node_name(chunk.node_id, attrs)  # maintain O(1) index
             self._relink_stub(chunk.name, chunk.node_id)
@@ -168,7 +185,7 @@ class GraphStore:
             c.type = $type, c.file_path = $file_path,
             c.start_line = $start_line, c.end_line = $end_line,
             c.scope = $scope, c.docstring = $docstring,
-            c.language = $language, c.hash = $hash
+            c.language = $language, c.hash = $hash, c.resolve = $resolve
         """
         assert self._driver is not None
         meta = chunk.to_metadata()
@@ -176,6 +193,7 @@ class GraphStore:
                   ("name", "qualified_name", "file_path",
                    "start_line", "end_line", "scope", "docstring", "language", "hash")}
         params["type"] = meta["chunk_type"]
+        params["resolve"] = json.dumps(chunk.resolve_info())
         with self._driver.session() as session:
             session.run(query, id=self._nid(chunk.node_id), ns=self._ns,
                         node_id=chunk.node_id, **params)
@@ -294,7 +312,163 @@ class GraphStore:
             session.run(query, source_id=self._nid(source_id), target_name=target_name,
                         ns=self._ns)
 
+    # ── Call linking (graph/resolver.py) ──────────────────────────────────
+
+    def all_definitions(self) -> list[dict]:
+        """Every indexed chunk node with the facts the call resolver needs."""
+        if self.use_fallback:
+            assert self.nx_graph is not None
+            return [
+                {"node_id": n, "name": d.get("name", ""),
+                 "qualified_name": d.get("qualified_name") or d.get("name", ""),
+                 "file_path": d.get("file_path", ""), "chunk_type": d.get("chunk_type", ""),
+                 "language": d.get("language", ""), "resolve": d.get("resolve") or {}}
+                for n, d in self.nx_graph.nodes(data=True)
+                if d.get("file_path") and d.get("type") != "stub"
+            ]
+        if not self._driver:
+            return []
+        with self._driver.session() as session:
+            rows = session.run("""
+                MATCH (c:Chunk {ns: $ns}) WHERE c.id IS NOT NULL
+                RETURN c.node_id AS node_id, c.name AS name, c.qualified_name AS qualified_name,
+                       c.file_path AS file_path, c.type AS chunk_type, c.language AS language,
+                       c.resolve AS resolve
+            """, ns=self._ns)
+            return [{**r.data(), "resolve": json.loads(r["resolve"]) if r["resolve"] else {}}
+                    for r in rows if r["node_id"]]
+
+    def replace_call_edges(self, edges: list[tuple[str, str, bool]],
+                           externals: list[tuple[str, str]]) -> int:
+        """Replace every CALLS edge with a freshly resolved set.
+
+        `edges` are (source node_id, target node_id, ambiguous); `externals`
+        are (source node_id, callee name) for calls into code that isn't
+        indexed (stdlib, libraries), stored as stub nodes. Returns the number
+        of resolved call edges.
+        """
+        if self.use_fallback:
+            assert self.nx_graph is not None
+            calls = [(u, v) for u, v, d in self.nx_graph.edges(data=True)
+                     if d.get("type") == EDGE_CALLS]
+            self.nx_graph.remove_edges_from(calls)
+            for src, dst, ambiguous in edges:
+                if src in self.nx_graph and dst in self.nx_graph and \
+                        not self.nx_graph.has_edge(src, dst):
+                    self.nx_graph.add_edge(src, dst, type=EDGE_CALLS, ambiguous=ambiguous)
+            for src, name in externals:
+                stub_id = f"stub::{name}"
+                if stub_id not in self.nx_graph:
+                    self.nx_graph.add_node(stub_id, name=name, type="stub")
+                    self._index_node_name(stub_id, {"name": name})
+                if src in self.nx_graph and not self.nx_graph.has_edge(src, stub_id):
+                    self.nx_graph.add_edge(src, stub_id, type=EDGE_CALLS, ambiguous=False)
+            orphans = [n for n, d in self.nx_graph.nodes(data=True)
+                       if d.get("type") == "stub" and self.nx_graph.degree(n) == 0]
+            for n in orphans:
+                self._name_index.get(self.nx_graph.nodes[n].get("name", ""), set()).discard(n)
+            self.nx_graph.remove_nodes_from(orphans)
+            return len(edges)
+
+        if not self._driver:
+            return 0
+        with self._driver.session() as session:
+            session.run("MATCH (:Chunk {ns: $ns})-[r:CALLS]->() DELETE r", ns=self._ns)
+            for i in range(0, len(edges), 1000):
+                rows = [{"s": self._nid(s), "t": self._nid(t), "a": a}
+                        for s, t, a in edges[i:i + 1000]]
+                session.run("""
+                    UNWIND $rows AS row
+                    MATCH (s:Chunk {id: row.s}) MATCH (t:Chunk {id: row.t})
+                    MERGE (s)-[r:CALLS]->(t) SET r.ambiguous = row.a
+                """, rows=rows)
+            for i in range(0, len(externals), 1000):
+                rows = [{"s": self._nid(s), "n": n} for s, n in externals[i:i + 1000]]
+                session.run("""
+                    UNWIND $rows AS row
+                    MATCH (s:Chunk {id: row.s})
+                    MERGE (t:Chunk {name: row.n, ns: $ns, external: true})
+                    MERGE (s)-[r:CALLS]->(t) SET r.ambiguous = false
+                """, rows=rows, ns=self._ns)
+            session.run("MATCH (c:Chunk {ns: $ns}) WHERE c.id IS NULL AND NOT (c)--() DELETE c",
+                        ns=self._ns)
+        return len(edges)
+
     # ── Query operations ─────────────────────────────────────────────────
+
+    def get_related(self, symbol: str, direction: str = "callees", depth: int = 1,
+                    include_external: bool = False,
+                    include_ambiguous: bool = False) -> list[dict]:
+        """Callers or callees of a symbol, with where each one lives.
+
+        Unlike get_dependencies/get_upstream_callers (bare names), this tells
+        same-named functions apart: each result has name, qualified_name,
+        file_path, start_line, and depth (hops from `symbol`).
+
+        Parameters
+        ----------
+        symbol:
+            Name or qualified name ("save" or "Order.save").
+        direction:
+            "callees" (what it calls) or "callers" (what calls it).
+        depth:
+            How many CALLS hops to follow.
+        include_external:
+            Include callees not defined in the indexed code (stubs).
+        include_ambiguous:
+            Also follow calls the resolver could not pin to one definition
+            (e.g. `obj.save()` with several `save` methods) — "possible" links.
+        """
+        downstream = direction == "callees"
+        if self.use_fallback:
+            assert self.nx_graph is not None
+            results: dict[str, dict] = {}
+            visited: set[str] = set()
+            frontier = self._find_nodes_by_name(symbol)
+            for hop in range(1, depth + 1):
+                next_frontier = []
+                for n in frontier:
+                    if n in visited:
+                        continue
+                    visited.add(n)
+                    neighbors = (self.nx_graph.successors(n) if downstream
+                                 else self.nx_graph.predecessors(n))
+                    for m in neighbors:
+                        edge = (self.nx_graph.get_edge_data(n, m) if downstream
+                                else self.nx_graph.get_edge_data(m, n))
+                        if not edge or edge.get("type") != EDGE_CALLS:
+                            continue
+                        if edge.get("ambiguous") and not include_ambiguous:
+                            continue
+                        attrs = self.nx_graph.nodes[m]
+                        if attrs.get("type") == "stub" and not include_external:
+                            continue
+                        if m not in results:
+                            results[m] = _related_record(attrs, hop)
+                        next_frontier.append(m)
+                frontier = next_frontier
+            return sorted(results.values(), key=lambda r: (r["depth"], r["qualified_name"]))
+
+        if not self._driver:
+            return []
+        if downstream:
+            pattern = f"(start:Chunk)-[:CALLS*1..{depth}]->(other)"
+        else:
+            pattern = f"(other:Chunk)-[:CALLS*1..{depth}]->(start:Chunk)"
+        external_filter = "" if include_external else "AND other.id IS NOT NULL"
+        ambiguous_filter = "" if include_ambiguous else _NO_AMBIGUOUS
+        query = f"""
+        MATCH p = {pattern}
+        WHERE start.ns = $ns AND (start.name = $name OR start.qualified_name = $name)
+              {external_filter} {ambiguous_filter}
+        RETURN other.name AS name, other.qualified_name AS qualified_name,
+               other.file_path AS file_path, other.start_line AS start_line,
+               min(length(p)) AS depth
+        ORDER BY depth, qualified_name
+        """
+        with self._driver.session() as session:
+            return [_related_record(r.data(), r["depth"])
+                    for r in session.run(query, name=symbol, ns=self._ns)]
 
     def get_dependencies(self, chunk_name: str, depth: int = 1,
                          include_external: bool = False) -> list[str]:
@@ -327,7 +501,7 @@ class GraphStore:
                     visited.add(n)
                     for successor in self.nx_graph.successors(n):
                         edge_data = self.nx_graph.get_edge_data(n, successor)
-                        if edge_data and edge_data.get("type") == EDGE_CALLS:
+                        if edge_data and edge_data.get("type") == EDGE_CALLS                                 and not edge_data.get("ambiguous"):
                             attrs = self.nx_graph.nodes[successor]
                             if attrs.get("type") == "stub" and not include_external:
                                 continue
@@ -346,9 +520,9 @@ class GraphStore:
         # Stub (external) nodes are the ones with no id
         external_filter = "" if include_external else "AND callee.id IS NOT NULL"
         query = f"""
-        MATCH (caller:Chunk)-[:CALLS*1..{depth}]->(callee)
+        MATCH p = (caller:Chunk)-[:CALLS*1..{depth}]->(callee)
         WHERE caller.ns = $ns AND (caller.name = $name OR caller.qualified_name = $name)
-              {external_filter}
+              {external_filter} {_NO_AMBIGUOUS}
         RETURN DISTINCT callee.name AS callee_name
         """
         assert self._driver is not None
@@ -382,7 +556,7 @@ class GraphStore:
                     visited.add(n)
                     for predecessor in self.nx_graph.predecessors(n):
                         edge_data = self.nx_graph.get_edge_data(predecessor, n)
-                        if edge_data and edge_data.get("type") == EDGE_CALLS:
+                        if edge_data and edge_data.get("type") == EDGE_CALLS                                 and not edge_data.get("ambiguous"):
                             name = self.nx_graph.nodes[predecessor].get("name", "")
                             if name:
                                 callers.add(name)
@@ -395,8 +569,9 @@ class GraphStore:
             return []
 
         query = f"""
-        MATCH (caller)-[:CALLS*1..{depth}]->(callee:Chunk)
+        MATCH p = (caller)-[:CALLS*1..{depth}]->(callee:Chunk)
         WHERE callee.ns = $ns AND (callee.name = $name OR callee.qualified_name = $name)
+              {_NO_AMBIGUOUS}
         RETURN DISTINCT caller.name AS caller_name
         """
         assert self._driver is not None

@@ -1,0 +1,854 @@
+{
+  "_doc": "Ground truth for eval/run_eval.py. kinds: retrieval (expected symbols must appear in the retrieved context), callers/callees (exact set, depth hops, in-repo only), parents (inheritance). 'route' lists the acceptable router query types. Symbols are qualified (Class.method) where a bare name would be ambiguous.",
+  "repos": {
+    "shop": {
+      "path": "repos/shop",
+      "concepts": [
+        [
+          "payment",
+          "stripe",
+          "gateway"
+        ],
+        [
+          "order",
+          "checkout"
+        ],
+        [
+          "user"
+        ],
+        [
+          "stock",
+          "inventory"
+        ],
+        [
+          "session",
+          "auth",
+          "login",
+          "password"
+        ],
+        [
+          "email",
+          "receipt",
+          "notification"
+        ]
+      ],
+      "questions": [
+        {
+          "q": "How does checkout work?",
+          "kind": "retrieval",
+          "expect": [
+            "checkout",
+            "process_payment",
+            "reserve_stock"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "How are receipts emailed to customers?",
+          "kind": "retrieval",
+          "expect": [
+            "send_receipt",
+            "send_email"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "Where are user passwords verified?",
+          "kind": "retrieval",
+          "expect": [
+            "verify_password"
+          ],
+          "route": [
+            "concept",
+            "complex",
+            "lookup"
+          ]
+        },
+        {
+          "q": "How is stock reserved for an order?",
+          "kind": "retrieval",
+          "expect": [
+            "reserve_stock",
+            "decrement"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "How does the Stripe charge request get sent?",
+          "kind": "retrieval",
+          "expect": [
+            "StripeGateway.charge",
+            "_post"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "Show me the Order model",
+          "kind": "retrieval",
+          "expect": [
+            "Order"
+          ],
+          "route": [
+            "lookup"
+          ]
+        },
+        {
+          "q": "What calls process_payment?",
+          "kind": "callers",
+          "symbol": "process_payment",
+          "expect": [
+            "checkout"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "Who uses send_receipt?",
+          "kind": "callers",
+          "symbol": "send_receipt",
+          "expect": [
+            "process_payment"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "Which functions call db.insert?",
+          "kind": "callers",
+          "symbol": "insert",
+          "expect": [
+            "User.save",
+            "Order.save",
+            "decrement"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "What does Order.save call?",
+          "kind": "callees",
+          "symbol": "Order.save",
+          "expect": [
+            "Order.validate",
+            "insert",
+            "BaseModel.to_dict"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "What does process_payment call?",
+          "kind": "callees",
+          "symbol": "process_payment",
+          "expect": [
+            "StripeGateway.charge",
+            "Order.total",
+            "Order.save",
+            "send_receipt"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "Who calls User.save?",
+          "kind": "callers",
+          "symbol": "User.save",
+          "expect": [
+            "create_user"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "What calls Order.validate?",
+          "kind": "callers",
+          "symbol": "Order.validate",
+          "expect": [
+            "Order.save"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "What happens if I change decrement?",
+          "kind": "callers",
+          "symbol": "decrement",
+          "depth": 3,
+          "expect": [
+            "reserve_stock",
+            "checkout"
+          ],
+          "route": [
+            "impact"
+          ]
+        },
+        {
+          "q": "What does Order inherit from?",
+          "kind": "parents",
+          "symbol": "Order",
+          "expect": [
+            "BaseModel"
+          ],
+          "route": [
+            "lookup",
+            "concept",
+            "complex"
+          ]
+        }
+      ]
+    },
+    "notes": {
+      "path": "repos/notes",
+      "concepts": [
+        [
+          "note"
+        ],
+        [
+          "api",
+          "client",
+          "request"
+        ],
+        [
+          "setting"
+        ],
+        [
+          "editor",
+          "autosave"
+        ],
+        [
+          "widget",
+          "badge"
+        ]
+      ],
+      "questions": [
+        {
+          "q": "How are notes loaded from the server?",
+          "kind": "retrieval",
+          "expect": [
+            "NotesStore.load",
+            "ApiClient.get"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "How does autosave work?",
+          "kind": "retrieval",
+          "expect": [
+            "autosave",
+            "debounce"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "How are API requests authenticated?",
+          "kind": "retrieval",
+          "expect": [
+            "ApiClient.request"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "How is the legacy widget mounted on the page?",
+          "kind": "retrieval",
+          "expect": [
+            "mountWidget",
+            "renderBadge"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "Who calls NotesStore.save?",
+          "kind": "callers",
+          "symbol": "NotesStore.save",
+          "expect": [
+            "autosave",
+            "renderEditor"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "What calls SettingsStore.save?",
+          "kind": "callers",
+          "symbol": "SettingsStore.save",
+          "expect": [],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "What calls ApiClient.request?",
+          "kind": "callers",
+          "symbol": "ApiClient.request",
+          "expect": [
+            "ApiClient.get",
+            "ApiClient.post"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "What does NotesStore.load call?",
+          "kind": "callees",
+          "symbol": "NotesStore.load",
+          "expect": [
+            "ApiClient.get"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "What does renderEditor call?",
+          "kind": "callees",
+          "symbol": "renderEditor",
+          "expect": [
+            "formatDate",
+            "NotesStore.save"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "What breaks if I change serializeNote?",
+          "kind": "callers",
+          "symbol": "serializeNote",
+          "depth": 3,
+          "expect": [
+            "NotesStore.save",
+            "autosave",
+            "renderEditor"
+          ],
+          "route": [
+            "impact"
+          ]
+        }
+      ]
+    },
+    "ledger": {
+      "path": "repos/ledger",
+      "concepts": [
+        [
+          "ledger",
+          "tx",
+          "transaction",
+          "balance"
+        ],
+        [
+          "server",
+          "handle",
+          "route"
+        ],
+        [
+          "config"
+        ]
+      ],
+      "questions": [
+        {
+          "q": "How are transactions validated before being recorded?",
+          "kind": "retrieval",
+          "expect": [
+            "validate",
+            "Ledger.Apply"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "How is an account balance computed?",
+          "kind": "retrieval",
+          "expect": [
+            "Ledger.Balance"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "How does the server start?",
+          "kind": "retrieval",
+          "expect": [
+            "Server.Start",
+            "Server.routes"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "What calls validate?",
+          "kind": "callers",
+          "symbol": "validate",
+          "expect": [
+            "Ledger.Apply"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "Who calls Ledger.Apply?",
+          "kind": "callers",
+          "symbol": "Ledger.Apply",
+          "expect": [
+            "Server.handleTx"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "What does handleTx call?",
+          "kind": "callees",
+          "symbol": "Server.handleTx",
+          "expect": [
+            "parseTx",
+            "writeError",
+            "Ledger.Apply",
+            "writeJSON"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "What does Ledger.append call?",
+          "kind": "callees",
+          "symbol": "Ledger.append",
+          "expect": [],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "What would break if I changed writeJSON?",
+          "kind": "callers",
+          "symbol": "writeJSON",
+          "depth": 3,
+          "expect": [
+            "Server.handleTx",
+            "Server.handleBalance"
+          ],
+          "route": [
+            "impact"
+          ]
+        },
+        {
+          "q": "What does NewServer call?",
+          "kind": "callees",
+          "symbol": "NewServer",
+          "expect": [
+            "NewLedger"
+          ],
+          "route": [
+            "dependency"
+          ]
+        }
+      ]
+    },
+    "kitsune": {
+      "path": "..",
+      "exclude": [
+        ".git",
+        "data",
+        "__pycache__",
+        "eval",
+        "tests",
+        ".env"
+      ],
+      "concepts": [
+        [
+          "parser",
+          "chunk"
+        ],
+        [
+          "embed"
+        ],
+        [
+          "store",
+          "vector",
+          "graph",
+          "keyword"
+        ],
+        [
+          "query",
+          "cache",
+          "search",
+          "router"
+        ],
+        [
+          "concept"
+        ],
+        [
+          "agent",
+          "investigat",
+          "planner"
+        ],
+        [
+          "engine",
+          "index"
+        ]
+      ],
+      "questions": [
+        {
+          "q": "How are deleted files removed during incremental indexing?",
+          "kind": "retrieval",
+          "expect": [
+            "Indexer.index_directory",
+            "Indexer._remove_file"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "How does the query cache decide that a paraphrased question is a hit?",
+          "kind": "retrieval",
+          "expect": [
+            "QueryCache._semantic_lookup",
+            "_identifiers"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "How are calls resolved to the right definition?",
+          "kind": "retrieval",
+          "expect": [
+            "CallResolver.resolve_ref"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "How is the context budget applied to retrieved chunks?",
+          "kind": "retrieval",
+          "expect": [
+            "apply_context_budget"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "How are list fields stored in ChromaDB metadata?",
+          "kind": "retrieval",
+          "expect": [
+            "_encode_metadata",
+            "_decode_metadata"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "How does hybrid search combine semantic, keyword and graph results?",
+          "kind": "retrieval",
+          "expect": [
+            "HybridSearcher.search"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "How are JavaScript IIFEs chunked?",
+          "kind": "retrieval",
+          "expect": [
+            "_iife_body"
+          ],
+          "route": [
+            "concept",
+            "complex"
+          ]
+        },
+        {
+          "q": "What calls embed_batch?",
+          "kind": "callers",
+          "symbol": "embed_batch",
+          "expect": [
+            "Indexer._store_chunks"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "What does Indexer._link_calls call?",
+          "kind": "callees",
+          "symbol": "Indexer._link_calls",
+          "expect": [
+            "CallResolver",
+            "CallResolver.resolve_all",
+            "GraphStore.all_definitions",
+            "GraphStore.replace_call_edges"
+          ],
+          "route": [
+            "dependency"
+          ]
+        },
+        {
+          "q": "Who calls apply_context_budget?",
+          "kind": "callers",
+          "symbol": "apply_context_budget",
+          "expect": [
+            "HybridSearcher.search"
+          ],
+          "route": [
+            "dependency"
+          ]
+        }
+      ]
+    }
+  },
+  "router": [
+    [
+      "Where is send_email used?",
+      [
+        "dependency"
+      ]
+    ],
+    [
+      "Find all usages of verify_password",
+      [
+        "dependency"
+      ]
+    ],
+    [
+      "Show me the callers of charge",
+      [
+        "dependency"
+      ]
+    ],
+    [
+      "Which code invokes reserve_stock?",
+      [
+        "dependency"
+      ]
+    ],
+    [
+      "List the functions that depend on db.query",
+      [
+        "dependency"
+      ]
+    ],
+    [
+      "What functions does checkout use?",
+      [
+        "dependency"
+      ]
+    ],
+    [
+      "callees of login",
+      [
+        "dependency"
+      ]
+    ],
+    [
+      "Who references ApiClient?",
+      [
+        "dependency"
+      ]
+    ],
+    [
+      "What is invoked by handleTx?",
+      [
+        "dependency"
+      ]
+    ],
+    [
+      "If I modify Order.total, what is affected?",
+      [
+        "impact"
+      ]
+    ],
+    [
+      "What's the blast radius of changing insert?",
+      [
+        "impact"
+      ]
+    ],
+    [
+      "Is it safe to rename send_receipt?",
+      [
+        "impact"
+      ]
+    ],
+    [
+      "What could break if I delete validate?",
+      [
+        "impact"
+      ]
+    ],
+    [
+      "Impact of refactoring ApiClient.request",
+      [
+        "impact"
+      ]
+    ],
+    [
+      "Show me process_payment",
+      [
+        "lookup"
+      ]
+    ],
+    [
+      "Where is login defined?",
+      [
+        "lookup"
+      ]
+    ],
+    [
+      "What is StripeGateway?",
+      [
+        "lookup",
+        "concept",
+        "complex"
+      ]
+    ],
+    [
+      "Find the definition of parseTx",
+      [
+        "lookup"
+      ]
+    ],
+    [
+      "How does the payment flow work end to end?",
+      [
+        "concept",
+        "complex"
+      ]
+    ],
+    [
+      "Explain the notification system",
+      [
+        "concept",
+        "complex"
+      ]
+    ],
+    [
+      "Walk me through how a transaction gets recorded",
+      [
+        "concept",
+        "complex"
+      ]
+    ],
+    [
+      "Give me an overview of the auth module",
+      [
+        "concept",
+        "complex"
+      ]
+    ],
+    [
+      "Track down everything relying on parseTx",
+      [
+        "dependency"
+      ]
+    ],
+    [
+      "anything downstream of handleTx?",
+      [
+        "dependency",
+        "complex"
+      ]
+    ],
+    [
+      "If verify_password gets rewritten, which endpoints are at risk?",
+      [
+        "impact"
+      ]
+    ],
+    [
+      "Give me the code of login",
+      [
+        "lookup"
+      ]
+    ],
+    [
+      "Tell me about how sessions get created",
+      [
+        "concept",
+        "complex"
+      ]
+    ],
+    [
+      "Who ends up hitting the Stripe gateway?",
+      [
+        "dependency"
+      ]
+    ],
+    [
+      "Would anything fail if I drop the decrement helper?",
+      [
+        "impact"
+      ]
+    ],
+    [
+      "Can I safely change the signature of writeJSON?",
+      [
+        "impact"
+      ]
+    ],
+    [
+      "Where does reserve_stock get triggered from?",
+      [
+        "dependency"
+      ]
+    ],
+    [
+      "Summarize the inventory subsystem",
+      [
+        "concept",
+        "complex"
+      ]
+    ]
+  ],
+  "_router_doc": "router: 22 phrasings written before the router changes + 10 used to calibrate the semantic fallback threshold (not held out)."
+}

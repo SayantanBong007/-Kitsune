@@ -20,12 +20,12 @@ from pathlib import Path
 
 from kitsune.embedder.contextualizer import contextualize_chunk
 from kitsune.embedder.embedder import embed_batch
+from kitsune.graph.resolver import CallResolver
 from kitsune.models.chunk import Chunk
 from kitsune.models.metrics import IndexMetrics, Timer
 from kitsune.parser.chunker import chunk_file
 from kitsune.parser.treesitter_parser import SUPPORTED_EXTENSIONS, get_language_name
 from kitsune.store.graph_store import (
-    EDGE_CALLS,
     EDGE_DECORATED_BY,
     EDGE_EXTENDS,
     EDGE_IMPORTS,
@@ -92,6 +92,7 @@ class Indexer:
         # ── K2 + K3: replace this file's old data in every store ──────────
         metrics = self._store_chunks(chunks, incremental=True)
         self._keyword.build()
+        metrics.total_edges += self._link_calls()
         self._graph.save()
 
         logger.info(f"  Embedded {len(chunks)} vectors, added {metrics.total_edges} graph edges")
@@ -204,6 +205,9 @@ class Indexer:
             # Build the BM25 index after all upserts
             self._keyword.build()
 
+            # Resolve every call site against the whole (updated) codebase
+            total_metrics.total_edges += self._link_calls()
+
             # Persist the graph to disk (S4)
             self._graph.save()
 
@@ -239,6 +243,15 @@ class Indexer:
         except Exception as e:
             logger.error(f"Parse failed for {path}: {e}")
             return None
+
+    def _link_calls(self) -> int:
+        """(Re)build all CALLS edges with the call resolver. Returns the edge count.
+
+        Runs over the whole project, not just changed files: a new or renamed
+        definition can change what calls in *unchanged* files resolve to.
+        """
+        resolution = CallResolver(self._graph.all_definitions()).resolve_all()
+        return self._graph.replace_call_edges(resolution.edges, resolution.externals)
 
     def _remove_file(self, file_path: str, keep_ids: set[str] | None = None):
         """Remove a file's old data from the vector, keyword, and graph stores."""
@@ -290,9 +303,8 @@ class Indexer:
                         graph_edges += 1
                     continue
 
-                for callee in chunk.calls:
-                    self._graph.add_edge(chunk.node_id, callee, edge_type=EDGE_CALLS)
-                    graph_edges += 1
+                # CALLS edges are added by _link_calls() once every file is
+                # stored, so a call can be resolved to the right definition.
 
                 for parent in chunk.inherits:
                     self._graph.add_edge(chunk.node_id, parent, edge_type=EDGE_EXTENDS)
