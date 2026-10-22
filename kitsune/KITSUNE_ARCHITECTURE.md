@@ -424,7 +424,7 @@ graph TB
     end
 
     subgraph Keyword["Keyword Store"]
-        KB[BM25<br/>rank_bm25<br/>Dict-based O&#40;1&#41; upsert]
+        KB[BM25<br/>rank_bm25<br/>Dict-based constant-time upsert]
         KB --> KB_F[✅ All environments]
     end
 
