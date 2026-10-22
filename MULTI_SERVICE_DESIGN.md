@@ -1,446 +1,315 @@
-# 🦊 Kitsune for Microservices — One Knowledge Graph Across Services
+# Kitsune for Microservices — Design Proposal
 
-> **Status: proposed design — not implemented yet.**
-> Today Kitsune builds an accurate graph *inside* each service. This document describes
-> how it will connect services to each other (REST, gRPC, queues, shared databases) so
-> that one knowledge graph covers the whole system.
-
----
-
-## 📌 Contents
-
-1. [The Problem](#-the-problem)
-2. [Example System](#-example-system)
-3. [How It Works — Overview](#-how-it-works--overview)
-4. [Step 1 — Discover Services](#step-1--discover-services)
-5. [Step 2 — Index Each Service](#step-2--index-each-service)
-6. [Step 3 — Find Service Boundaries](#step-3--find-service-boundaries)
-7. [Step 4 — Link Services Together](#step-4--link-services-together)
-8. [The Unified Knowledge Graph](#-the-unified-knowledge-graph)
-9. [Asking Questions Across Services](#-asking-questions-across-services)
-10. [Confidence — Confirmed vs Possible Links](#-confidence--confirmed-vs-possible-links)
-11. [Storage Layout](#-storage-layout)
-12. [Agent Tools (MCP)](#-agent-tools-mcp)
-13. [Limits](#-limits)
-14. [How We'll Measure It](#-how-well-measure-it)
-15. [Rollout Plan](#-rollout-plan)
+> **Status:** proposal for review. Nothing in this document is implemented yet unless
+> marked ✅ *exists today*.
+> **Decision requested:** approve the approach and the open decisions in
+> [section 9](#9-decisions-needed-from-the-architect), so implementation can start with Phase 1.
 
 ---
 
-## 🎯 The Problem
+## 1. Summary
 
-Inside one service, code talks through **function calls** — Kitsune already resolves
-those precisely (imports, types, receivers, inheritance).
+**Goal:** one knowledge graph that covers *all* our services — even when they live in
+separate repositories and are written in different languages — so that we (and AI
+coding agents) can ask questions like:
 
-Between services, code talks over the **network**. To a parser, the link is invisible:
+- *"If I change the payment API, which services and screens are affected?"*
+- *"What happens, end to end, when a user clicks **Place Order**?"*
 
-```text
-order-service (Python)                       payment-service (Java)
-──────────────────────                       ──────────────────────
-def place_order(order):                      @PostMapping("/charges")
-    httpx.post(f"{PAYMENTS}/charges", ...)   public Charge createCharge(...) { ... }
-            │                                              ▲
-            └──────── no function call links these ────────┘
-```
+**How, in one sentence:** Kitsune reads each repository on its own into **one shared
+knowledge base**, records for each service **what it offers** (its endpoints) and
+**what it calls** on other services, and then **matches the two** to connect the
+services.
 
-Today Kitsune sees `httpx.post` as "a call into an external library" and stops.
-So the most valuable microservice question — *"if I change `createCharge`, what breaks in
-other services?"* — can't be answered. This design adds those missing links.
+**What we already have** ✅: Kitsune already understands the code *inside* a service
+(functions, classes, who calls whom — measured at 100% on our call-graph tests), and it
+already supports a shared server setup (Qdrant + Neo4j) with separate "systems"
+(namespaces), tested on live servers.
+
+**What is new:** labelling each service, finding endpoints and calls between services,
+and the matching step that connects them.
 
 ---
 
-## 🏗 Example System
+## 2. Our example system
 
-Used throughout this document: four services, four languages, three ways of talking.
+The rest of this document uses our real stack:
 
 ```mermaid
 graph LR
-    subgraph order["order-service · Python FastAPI"]
-        O1["POST /orders<br/>place_order()"]
-    end
-    subgraph payment["payment-service · Java Spring"]
-        P1["POST /charges<br/>createCharge()"]
-        P2["gRPC Refund()<br/>refund()"]
-    end
-    subgraph inventory["inventory-service · Go"]
-        I1["gRPC Reserve()<br/>Reserve()"]
-    end
-    subgraph notify["notification-service · Node Express"]
-        N1["consumer: order.placed<br/>onOrderPlaced()"]
-    end
-    DB[("orders DB<br/>table: orders")]
-    K{{"Kafka topic<br/>order.placed"}}
-
-    O1 -- "REST POST /charges" --> P1
-    O1 -- "gRPC Inventory.Reserve" --> I1
-    O1 -- "publish" --> K
-    K -- "consume" --> N1
-    O1 -- "writes" --> DB
-    P1 -- "reads" --> DB
+    SW["Desktop client<br/>Java Swing"] -->|"HTTP"| OR["Orchestration service<br/>Go"]
+    OR -->|"HTTP"| PAY["payment-service<br/>Java Spring Boot"]
+    OR -->|"HTTP"| ORD["order-service<br/>Java Spring Boot"]
+    OR -->|"gRPC"| INV["inventory-service<br/>Go"]
 ```
 
-Repository layout can be anything — Kitsune treats each service as its own unit either way:
+A user clicks **Place Order** in the Swing app → the Swing app calls the orchestrator →
+the orchestrator calls the backend services (Spring Boot and Go).
 
-```text
-Option A — monorepo                 Option B — separate repos
-──────────────────                  ─────────────────────────
-platform/                           ~/code/order-service/
-├── order-service/                  ~/code/payment-service/
-├── payment-service/                ~/code/inventory-service/
-├── inventory-service/              ~/code/notification-service/
-├── notification-service/
-└── proto/  (shared .proto files)
-```
+Each box can be its **own Git repository**. That is fine — see section 4.
 
 ---
 
-## 🔄 How It Works — Overview
+## 3. The problem
+
+Inside one service, code is connected by **function calls**, and Kitsune already maps
+those.
+
+Between services, code is connected over the **network** — an HTTP request or a gRPC
+call. To a code reader, that link is invisible: the Swing app contains the text
+`"/api/orders"`, the Go orchestrator contains a route `"/api/orders"`, but nothing in
+the code *directly* ties the two together.
+
+So today Kitsune gives us **four separate maps** — one per service — with no roads
+between them. It cannot answer *"what breaks in other services if I change this?"*
+
+---
+
+## 4. How it works
+
+### The idea: offers and calls
+
+For every service, Kitsune writes down two lists:
+
+| | Meaning | Example |
+|---|---|---|
+| **Offers** | the endpoints this service exposes | orchestrator offers `POST /api/orders` |
+| **Calls** | the endpoints of *other* services it uses | Swing client calls `POST /api/orders` |
+
+Then it **matches every call to an offer**. Where they match, it draws a connection.
+The services never need to know about each other — the connection comes from the
+**addresses** written in the code (URL paths, gRPC service names, queue topics).
+
+### The four steps
 
 ```mermaid
 flowchart TB
-    IN["📁 Monorepo folder<br/>or list of repos"] --> D
-
-    subgraph S1["Step 1 · Discover"]
-        D["Detect services<br/>Dockerfile · package.json · go.mod<br/>pom.xml · pyproject.toml · kitsune.yaml"]
-    end
-
-    subgraph S2["Step 2 · Index each service (today's Kitsune)"]
-        D --> A1["order-service"]
-        D --> A2["payment-service"]
-        D --> A3["inventory-service"]
-        D --> A4["notification-service"]
-        A1 & A2 & A3 & A4 --> G1["Per-service graph<br/>chunks · embeddings · CALLS · BM25"]
-    end
-
-    subgraph S3["Step 3 · Find boundaries (new)"]
-        G1 --> PR["Providers<br/>HTTP routes · gRPC servers<br/>queue consumers · DB tables"]
-        G1 --> CO["Consumers<br/>HTTP clients · gRPC stubs<br/>queue producers · DB queries"]
-    end
-
-    subgraph S4["Step 4 · Link (new)"]
-        PR & CO --> M["Match<br/>method + path · proto service/method<br/>topic name · table name"]
-        M --> X["Cross-service edges<br/>HTTP_CALLS · GRPC_CALLS<br/>PUBLISHES/CONSUMES · READS/WRITES"]
-    end
-
-    X --> KG[("🕸 Unified knowledge graph")]
-    KG --> Q["❓ Questions across services<br/>search · impact · service map"]
+    A["1 · Read each repository on its own<br/>(what Kitsune does today)"]
+    B["2 · List each service's Offers and Calls<br/>(new)"]
+    C["3 · Store everything in ONE shared knowledge base,<br/>each item labelled with its service (new)"]
+    D["4 · Match Calls to Offers across all services<br/>→ connected map (new)"]
+    A --> B --> C --> D
 ```
 
-Steps 1 and 2 reuse what Kitsune already does. Steps 3 and 4 are new.
+### Applied to our example
 
----
+| Service | Offers | Calls |
+|---|---|---|
+| Swing client | — | `POST /api/orders` (from the Place Order screen) |
+| Orchestrator (Go) | `POST /api/orders` | `POST /payments`, `POST /orders`, gRPC `Inventory.Reserve` |
+| payment-service (Spring) | `POST /payments` | — |
+| order-service (Spring) | `POST /orders` | — |
+| inventory-service (Go) | gRPC `Inventory.Reserve` | — |
 
-## Step 1 — Discover Services
-
-Each top-level folder (or each repo you pass in) that looks like a deployable unit
-becomes a **service**.
-
-| Signal | Example |
-|--------|---------|
-| `Dockerfile` / `docker-compose.yml` service | `order-service/Dockerfile` |
-| Package manifest | `package.json`, `go.mod`, `pom.xml`, `build.gradle`, `pyproject.toml` |
-| Kubernetes / Helm manifests | `deployment.yaml` with `name: payment-service` |
-| Explicit config (overrides everything) | `kitsune.yaml` below |
-
-```yaml
-# kitsune.yaml — optional, for anything auto-detection gets wrong
-services:
-  order-service:    { path: order-service,   base_url_env: ORDER_URL }
-  payment-service:  { path: payment-service, base_url_env: PAYMENTS }
-  inventory-service:{ path: inventory-service }
-shared:
-  - proto/          # .proto files used by several services
-  - libs/common/    # shared library code (calls into it link normally)
-```
-
-`base_url_env` tells Kitsune that a URL built from `PAYMENTS` points at
-`payment-service` — the most useful hint for REST links.
-
----
-
-## Step 2 — Index Each Service
-
-Exactly today's pipeline, run per service, with every chunk and graph node tagged with
-its `service`:
-
-```mermaid
-flowchart LR
-    F["source files"] --> P["tree-sitter parse<br/>→ chunks"] --> E["embed<br/>(bge-small)"] --> V[("vectors")]
-    P --> R["call resolver<br/>(imports · types · receivers)"] --> G[("graph<br/>CALLS edges")]
-    P --> B[("BM25")]
-    style R fill:#e8f5e9
-```
-
-One rule changes: **in-code call resolution stays inside a service** (plus shared
-libraries it actually imports). Two services both having a `save()` function will
-never be linked by name.
-
----
-
-## Step 3 — Find Service Boundaries
-
-For every service, Kitsune extracts the **providers** (what it exposes) and
-**consumers** (what it calls on other services) — each attached to the exact
-function that owns it.
-
-### What gets recognised
-
-| Channel | Provider side (exposes) | Consumer side (calls) |
-|---------|------------------------|-----------------------|
-| **REST — Python** | FastAPI `@app.post("/orders")`, Flask `@app.route` | `requests` / `httpx` `.get/.post(...)` |
-| **REST — Node** | Express `app.get("/x", h)`, `router.post(...)` | `fetch(...)`, `axios.get/post(...)` |
-| **REST — Java** | Spring `@GetMapping` / `@PostMapping` / `@RequestMapping` | `RestTemplate`, `WebClient`, Feign `@FeignClient` interfaces |
-| **REST — Go** | `http.HandleFunc`, `mux/chi/gin` `r.GET(...)` | `http.Get/Post`, `http.NewRequest` |
-| **gRPC (all)** | `.proto` `service` + generated server implementation | generated client stub calls `client.Reserve(...)` |
-| **Kafka / RabbitMQ / SQS** | consumer: `@KafkaListener(topics=…)`, `consumer.subscribe([...])`, `channel.consume(q)` | producer: `producer.send(topic, …)`, `basic_publish`, `send_message(QueueUrl=…)` |
-| **Shared database** | ORM models / migrations defining table `orders` | SQL strings & ORM queries touching `orders` |
-
-### Turning code into comparable endpoints
-
-```text
-Consumer (order-service)                         normalized
-httpx.post(f"{PAYMENTS}/charges", json=…)    →   POST  payment-service  /charges
-httpx.get(f"{PAYMENTS}/charges/{cid}")       →   GET   payment-service  /charges/{*}
-
-Provider (payment-service)
-@PostMapping("/charges")                     →   POST  payment-service  /charges
-@GetMapping("/charges/{id}")                 →   GET   payment-service  /charges/{*}
-```
-
-Path parameters (`{id}`, `:id`, `<int:id>`, `{cid}`, `123`) all normalize to `{*}`.
-String constants and f-string pieces are followed where they're visible in code.
-
----
-
-## Step 4 — Link Services Together
-
-```mermaid
-sequenceDiagram
-    participant C as Consumer extractor
-    participant P as Provider extractor
-    participant L as Linker
-    participant G as Graph
-
-    C->>L: POST payment-service /charges  (from order-service.place_order)
-    P->>L: POST /charges  (payment-service.ChargeController.createCharge)
-    L->>L: match service + method + normalized path
-    L->>G: place_order —HTTP_CALLS{POST /charges}→ createCharge  ✅ confirmed
-
-    C->>L: POST ??? /charges  (URL from runtime config)
-    L->>L: path matches 1 provider in any service
-    L->>G: … —HTTP_CALLS→ createCharge  ⚠️ possible
-
-    C->>L: publish "order.placed"  (order-service.place_order)
-    P->>L: consume "order.placed"  (notification-service.onOrderPlaced)
-    L->>G: place_order —PUBLISHES→ (topic) —CONSUMED_BY→ onOrderPlaced  ✅
-```
-
-| Channel | Matching key | Typical confidence |
-|---------|-------------|--------------------|
-| gRPC | proto package + service + method | ✅ highest — names are explicit |
-| Queues | topic / queue name (constants followed) | ✅ high |
-| REST | target service + HTTP method + normalized path | ✅ when the base URL is known, ⚠️ when inferred from path only |
-| Database | table name | ⚠️ shared-table coupling (read/write), not a call |
-
----
-
-## 🕸 The Unified Knowledge Graph
-
-```mermaid
-graph TB
-    subgraph os["order-service"]
-        po["place_order()"] -->|CALLS| vo["validate_order()"]
-        po -->|CALLS| pub["publish_event()"]
-    end
-    subgraph ps["payment-service"]
-        cc["ChargeController.createCharge()"] -->|CALLS| sc["StripeClient.charge()"]
-        rf["RefundService.refund()"]
-    end
-    subgraph is["inventory-service"]
-        rs["InventoryServer.Reserve()"] -->|CALLS| dec["decrement()"]
-    end
-    subgraph ns["notification-service"]
-        oop["onOrderPlaced()"] -->|CALLS| se["sendEmail()"]
-    end
-
-    po ==>|"HTTP_CALLS<br/>POST /charges"| cc
-    po ==>|"GRPC_CALLS<br/>Inventory.Reserve"| rs
-    pub ==>|"PUBLISHES"| t{{"topic: order.placed"}}
-    t ==>|"CONSUMED_BY"| oop
-    po -.->|"WRITES"| tb[("table: orders")]
-    cc -.->|"READS"| tb
-```
-
-**Node types:** `Chunk` (functions/classes, as today) · `Service` · `Endpoint`
-(REST route / gRPC method) · `Topic` · `Table`.
-
-**Edge types:** today's `CALLS`, `EXTENDS`, `IMPORTS`, `DECORATED_BY`, plus
-`HTTP_CALLS`, `GRPC_CALLS`, `PUBLISHES`, `CONSUMED_BY`, `READS`, `WRITES`,
-`EXPOSES` (service → endpoint) — each with `confidence: confirmed | possible`.
-
-Zoomed out, the same graph gives a **service map**:
+After matching:
 
 ```mermaid
 graph LR
-    OS["order-service"] -->|"REST · 3 endpoints"| PS["payment-service"]
-    OS -->|"gRPC · 1 method"| IS["inventory-service"]
-    OS -->|"Kafka · order.placed"| NS["notification-service"]
-    OS <-->|"shared table · orders"| PS
+    S["Swing: Place Order screen"] -->|"POST /api/orders"| O["Orchestrator: create order handler"]
+    O -->|"POST /payments"| P["payment-service: pay"]
+    O -->|"POST /orders"| R["order-service: create"]
+    O -->|"gRPC Inventory.Reserve"| I["inventory-service: reserve stock"]
 ```
+
+Combined with what Kitsune already knows *inside* each service, this gives one map from
+the button click down to every backend function involved.
+
+### How Kitsune knows which service an address belongs to
+
+A call like *"POST to `<payment URL>`/payments"* must be tied to payment-service. Kitsune
+uses, in order:
+
+1. **gRPC definitions** (`.proto` files) — they name the service and method exactly.
+2. **Configuration** — e.g. Spring `application.properties`
+   (`payment.url=http://payment-service:8080`), constants, environment variable names.
+3. **A small mapping file** we maintain where the code is not enough, e.g.
+   *"`PAYMENT_URL` means payment-service"*.
+
+If none of these settle it, the connection is still recorded but marked **"possible"**
+(see section 6) instead of being guessed.
 
 ---
 
-## ❓ Asking Questions Across Services
-
-### "What breaks if I change `createCharge`?"
+## 5. The shared knowledge base (with separate repositories)
 
 ```mermaid
-sequenceDiagram
-    participant U as You / Agent
-    participant K as Kitsune
-    participant G as Unified graph
-
-    U->>K: impact_analysis("ChargeController.createCharge")
-    K->>G: callers inside payment-service (CALLS, upstream)
-    G-->>K: — none —
-    K->>G: endpoints it serves (EXPOSES)
-    G-->>K: POST /charges
-    K->>G: who calls POST /charges (HTTP_CALLS, upstream)
-    G-->>K: order-service.place_order
-    K->>G: callers of place_order (CALLS + HTTP_CALLS, upstream)
-    G-->>K: OrdersRouter.create  ← POST /orders  ← web-frontend.checkout()
-    K-->>U: impact report (below)
+flowchart TB
+    subgraph KB["Shared knowledge base — system name: our-platform"]
+        Q[("Qdrant<br/>code, searchable by meaning")]
+        N[("Neo4j<br/>call map + Offers + Calls")]
+    end
+    R1["Swing repo"] -->|"index as: swing-client"| KB
+    R2["Orchestrator repo"] -->|"index as: orchestrator"| KB
+    R3["payment repo"] -->|"index as: payment-service"| KB
+    R4["order repo"] -->|"index as: order-service"| KB
+    R5["inventory repo"] -->|"index as: inventory-service"| KB
+    KB --> U["Developers, chat, AI agents<br/>ask questions across all services"]
 ```
+
+1. **One home.** A Qdrant + Neo4j server (✅ *supported and tested today*).
+2. **One system name**, e.g. `our-platform` (✅ *namespaces exist today*), so several
+   systems can share the same server without mixing.
+3. **Each repository writes its own slice**, labelled with its service name (new). Repos
+   can be indexed in any order, from any machine.
+4. **The matching step runs after each update** and redraws only the connections
+   between services. It compares lists of endpoints, not source code, so it is fast.
+5. **Kept current by CI.** Each repository's pipeline (after every merge to main)
+   re-indexes only that repository's changed files and re-runs matching. Alternative:
+   one scheduled job that refreshes all repositories.
+6. **Monorepo works the same way** — each service folder is one slice.
+
+---
+
+## 6. How reliable the connections are
+
+| Kind of connection | Reliability | Why |
+|---|---|---|
+| gRPC | **High** | `.proto` files state service and method exactly |
+| HTTP with paths written in code + URL from config/constant | **High** | path and target service both visible |
+| Message queues (Kafka, RabbitMQ, SQS) — same topic name | **High** | topic name written in both services |
+| HTTP where the URL only exists at runtime (service discovery, gateway rewrites, user input) | **Possible** | address not visible in code — needs a mapping-file entry |
+| Two services using the same database table | **Coupling, not a call** | shown separately |
+
+**Rule:** answers use the reliable connections by default and list the "possible" ones
+separately, so nobody is misled. This is the same rule Kitsune already uses inside a
+service today.
+
+---
+
+## 7. What we get
+
+**Impact across services** — *"If I change `pay` in payment-service, what is affected?"*
 
 ```text
-Impact of payment-service · ChargeController.createCharge  (POST /charges)
-
-  confirmed
-    order-service      place_order()          order/service.py:42      via REST POST /charges
-    order-service      create_order_route()   order/api.py:18          calls place_order
-    web-frontend       checkout()             src/checkout.ts:77       via REST POST /orders
-  possible
-    billing-batch      retry_failed()         jobs/retry.py:12         URL built from config
-  shared data
-    order-service writes table `orders`, which createCharge reads
+pay                              payment-service
+ ▲  POST /payments
+create order handler             orchestrator (Go)          handlers/order.go:31
+ ▲  POST /api/orders
+Place Order screen               Swing client               ui/OrderPanel.java:88
 ```
 
-### Other questions it answers
+**End-to-end flows** — *"What happens when the user places an order?"* — Kitsune
+follows the connections forward and gives the AI the relevant code from every service,
+in order.
 
-| Question | How |
-|----------|-----|
-| "How does an order flow through the system?" | semantic search + follow `HTTP/GRPC/PUBLISHES` edges across services |
-| "Which services call payment-service, and how?" | service map edges |
-| "Who consumes `order.placed`?" | `Topic` node → `CONSUMED_BY` |
-| "Is `/charges/{id}` still used?" | `Endpoint` with no incoming `HTTP_CALLS` → dead-endpoint candidate |
-| "Which services touch the `orders` table?" | `Table` node → `READS` / `WRITES` |
+**Service map** — which service calls which, over what (HTTP / gRPC / queue).
+
+**Dead endpoint candidates** — endpoints that no service calls.
 
 ---
 
-## 🎚 Confidence — Confirmed vs Possible Links
+## 8. Risks and limits
 
-Same principle as Kitsune's in-code call resolver today: be explicit about certainty.
+| Risk | Impact | Mitigation |
+|---|---|---|
+| URLs built only at runtime (service discovery, API gateway rewrites) | Some connections missing or "possible" | Mapping file; read gateway route config later |
+| Route prefixes (e.g. Spring class-level `/api`) | Paths would not match | Combine prefixes before matching (in scope) |
+| Frameworks we have not covered | No connections for that service | Add one extractor per framework; same pattern |
+| Two pipelines updating at the same time | Inconsistent connections | Lock around the matching step |
+| Whole system's code readable from one server | Access risk | Internal network + authentication on Qdrant/Neo4j |
+| Infrastructure-only wiring (Istio, cron, cloud event rules) | Not visible in code | Out of scope for now |
 
-| Confirmed ✅ | Possible ⚠️ |
-|-------------|------------|
-| gRPC call to a method defined in a `.proto` | REST call whose base URL comes from runtime config |
-| REST call with a known base URL (`base_url_env`, constant) and matching route | path matches routes in several services |
-| Producer and consumer use the same topic constant | topic name built dynamically |
-| | two services share a table (coupling, not a direct call) |
-
-Default answers use confirmed links; "possible" links are listed separately so an
-engineer or agent can verify them.
+Expected result: most connections in a typical HTTP / gRPC / queue system — **not 100%**.
 
 ---
 
-## 🗄 Storage Layout
+## 9. Decisions needed from the architect
 
-Works with both local (ChromaDB + NetworkX) and server (Qdrant + Neo4j) backends.
+1. **Scope of the first version:** HTTP + gRPC only, or also message queues and shared
+   databases?
+2. **Where the shared knowledge base runs:** which server / environment hosts Qdrant +
+   Neo4j, and who can access it.
+3. **How it stays up to date:** each repository's CI updates its own slice, or one
+   scheduled job for all?
+4. **Mapping file ownership:** one central file, or one per repository?
+5. **Which frameworks first:** confirm the list in section 10 matches what we actually use
+   (e.g. which Go router, which Java HTTP client in the Swing app).
 
-```text
-namespace: platform                          ← the whole system
-├── service: order-service          chunks, CALLS (internal)
-├── service: payment-service        chunks, CALLS (internal)
-├── service: inventory-service      chunks, CALLS (internal)
-├── service: notification-service   chunks, CALLS (internal)
-└── cross-service layer             Service, Endpoint, Topic, Table nodes
-                                    HTTP_CALLS, GRPC_CALLS, PUBLISHES, CONSUMED_BY, READS, WRITES
+---
+
+## 10. Implementation plan
+
+Each phase is tested with a small sample system (Swing + Go + Spring) where the correct
+answers are known in advance — the same way Kitsune's current quality tests work — so
+progress is measured, not assumed.
+
+| Phase | Delivers | Size |
+|---|---|---|
+| **1. Services** | service labels, one shared knowledge base, search one or all services | Small |
+| **2. gRPC** | read `.proto` files, connect gRPC clients to servers | Medium |
+| **3. HTTP** | find endpoints and HTTP calls for our frameworks (below), path matching, config reading, mapping file | Large |
+| **4. Cross-service questions** | impact across services, end-to-end flows, service map | Medium |
+| **5. Optional** | message queues, shared database tables | Medium |
+
+**Frameworks covered in Phase 3 (to confirm):**
+
+| Language | Endpoints (offers) | HTTP calls |
+|---|---|---|
+| Java Spring Boot | `@GetMapping`, `@PostMapping`, `@RequestMapping` (incl. class-level prefix) | `RestTemplate`, `WebClient`, Feign |
+| Java Swing client | — | `java.net.http.HttpClient`, OkHttp, Apache HttpClient |
+| Go | `net/http`, gin, chi, gorilla/mux | `http.Get/Post`, `http.NewRequest` |
+
+Settings read for service URLs: Spring `application.properties` / `.yml`, environment
+variable names, constants, and the mapping file.
+
+---
+
+## Appendix — technical details
+
+<details>
+<summary>Graph model</summary>
+
+- **Nodes:** code (functions, classes — as today), `Service`, `Endpoint`
+  (HTTP route or gRPC method), and later `Topic`, `Table`.
+- **Connections:** today's `CALLS` (inside a service), plus `HTTP_CALLS`, `GRPC_CALLS`,
+  `EXPOSES` (service → endpoint), and later `PUBLISHES`, `CONSUMED_BY`, `READS`,
+  `WRITES`. Each cross-service connection is marked `confirmed` or `possible`.
+- Every item carries its `service`, so questions can cover the whole system or one
+  service.
+
+</details>
+
+<details>
+<summary>Matching rules</summary>
+
+- **HTTP:** target service + method + path. Path parameters (`{id}`, `:id`, `123`) are
+  treated as "any value"; route prefixes are combined first.
+- **gRPC:** proto package + service + method.
+- **Queues:** topic / queue name.
+- Inside a service, function calls are still resolved only within that service (plus
+  shared libraries it imports), so two services that both have a `save()` function are
+  never confused.
+
+</details>
+
+<details>
+<summary>Example mapping file</summary>
+
+```yaml
+# kitsune.yaml — only for what the code and config don't already say
+system: our-platform
+services:
+  swing-client:      { repo: swing-client }
+  orchestrator:      { repo: orchestrator,      url_vars: [ORCH_URL] }
+  payment-service:   { repo: payment-service,   url_vars: [PAYMENT_URL] }
+  order-service:     { repo: order-service,     url_vars: [ORDER_URL] }
+  inventory-service: { repo: inventory-service }
+shared:
+  - proto/          # .proto files used by several services
 ```
 
-- Every chunk/node carries `service`, so searches can be **system-wide** or
-  **filtered to one service**.
-- **Incremental:** editing `order-service` re-indexes only its changed files, then
-  re-runs boundary linking (cheap — it works on extracted endpoints, not source).
-- Several systems can still share one Qdrant/Neo4j via namespaces.
+</details>
 
----
+<details>
+<summary>What exists today vs. what is new</summary>
 
-## 🔌 Agent Tools (MCP)
+| Capability | Status |
+|---|---|
+| Understand code inside a service (Java, Go, Python, JS/TS, …) | ✅ exists, quality-tested |
+| Accurate call graph inside a service | ✅ exists (100% on current tests) |
+| Shared server (Qdrant + Neo4j), separate systems (namespaces) | ✅ exists, tested on live servers |
+| Incremental updates (only changed files) | ✅ exists |
+| Service labels, Offers/Calls lists, matching, cross-service questions | ❌ new — this proposal |
+| AI-agent access (MCP server) | ⚠️ experimental, not yet released |
 
-Existing tools gain a `service` filter; new ones cover the cross-service layer:
-
-| Tool | What it returns |
-|------|-----------------|
-| `index_system(path or repos[])` | discovers services, indexes all, links boundaries |
-| `search_code(question, service?)` | context across the system or one service |
-| `impact_analysis(symbol)` | callers **across services**, with the channel (REST/gRPC/queue) |
-| `service_map()` | services and how they talk (endpoints, topics, tables) |
-| `find_endpoint_callers("POST /charges")` | every consumer of an endpoint |
-| `list_endpoints(service)` | routes / RPCs / topics a service exposes |
-
----
-
-## ⚠️ Limits
-
-- **Runtime-built targets:** URLs or topic names assembled from config files, service
-  discovery, or API gateway rewrites are only partly recoverable → marked *possible*.
-  `kitsune.yaml` (`base_url_env`, gateway route maps) closes most of the gap.
-- **Framework coverage:** the frameworks listed above first; others (NestJS
-  decorators, Micronaut, Echo, aiohttp, …) are additional extractors in the same
-  shape.
-- **Non-code wiring:** links that exist only in infrastructure (Istio routes, AWS
-  EventBridge rules, cron triggers) aren't visible in source code.
-- **Dynamic dispatch inside services:** same limit as today — resolved through
-  imports/types/receivers; unresolvable calls are *possible*, not guessed.
-
-Expect most connections of a typical REST/gRPC/queue codebase — not 100%.
-
----
-
-## 📏 How We'll Measure It
-
-Same approach as `eval/run_eval.py`: a fixture system with known answers.
-
-```text
-eval/repos/platform/
-├── order-service/        Python FastAPI   — REST client, gRPC client, Kafka producer
-├── payment-service/      Java Spring      — REST provider, gRPC provider
-├── inventory-service/    Go               — gRPC provider
-├── notification-service/ Node Express     — Kafka consumer
-└── proto/                inventory.proto, payments.proto
-```
-
-| Metric | Meaning |
-|--------|---------|
-| link precision / recall | cross-service edges found vs ground truth, per channel |
-| cross-service impact F1 | `impact_analysis` across services vs ground truth |
-| false links between services | must stay ~0 (same-named functions in different services) |
-| existing metrics | in-service retrieval / graph scores must not regress |
-
----
-
-## 🚀 Rollout Plan
-
-| Phase | Delivers | Answers |
-|-------|----------|---------|
-| **1. Services** | discovery, `service` tag, per-service resolution, filtered search | "search only payment-service" |
-| **2. gRPC + queues** | `.proto` parsing, producer/consumer extraction, linking | "who consumes order.placed?", "who calls Reserve?" |
-| **3. REST** | route + client extractors for FastAPI/Flask, Express, Spring, Go; path matching; `kitsune.yaml` | "who calls POST /charges?" |
-| **4. Cross-service queries** | impact across services, service map, MCP tools | "what breaks if I change createCharge?" |
-| **5. Shared data** | table extraction from SQL/ORM | "who touches the orders table?" |
-
-Each phase ships with fixture questions in the eval, so every step is measured.
-
----
-
-*Kitsune — because a fox with many tails sees more than one service.*
+</details>
