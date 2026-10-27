@@ -71,7 +71,7 @@ _EDGE_TYPES = (EDGE_CALLS, EDGE_EXTENDS, EDGE_IMPORTS, EDGE_DECORATED_BY, EDGE_D
 _NO_AMBIGUOUS = "AND ALL(r IN relationships(p) WHERE NOT coalesce(r.ambiguous, false))"
 
 
-def _related_record(attrs: dict, depth: int) -> dict:
+def _related_record(attrs: dict, depth: int, via: str = "CALLS") -> dict:
     """Shape a graph node into a get_related() result."""
     name = attrs.get("name") or ""
     return {
@@ -79,8 +79,18 @@ def _related_record(attrs: dict, depth: int) -> dict:
         "qualified_name": attrs.get("qualified_name") or name,
         "file_path": attrs.get("file_path"),
         "start_line": attrs.get("start_line"),
+        "service": attrs.get("service") or "",
         "depth": depth,
+        "via": via,
     }
+
+
+# Cross-service edges (kitsune/services): caller function → handler in another service
+EDGE_HTTP = "HTTP_CALLS"
+EDGE_GRPC = "GRPC_CALLS"
+EDGE_MESSAGE = "MESSAGES"
+SERVICE_EDGE_TYPES = (EDGE_HTTP, EDGE_GRPC, EDGE_MESSAGE)
+_LINK_EDGE = {"http": EDGE_HTTP, "grpc": EDGE_GRPC, "queue": EDGE_MESSAGE}
 
 
 class GraphStore:
@@ -338,13 +348,15 @@ class GraphStore:
             c.type = $type, c.file_path = $file_path,
             c.start_line = $start_line, c.end_line = $end_line,
             c.scope = $scope, c.docstring = $docstring,
-            c.language = $language, c.hash = $hash, c.resolve = $resolve
+            c.language = $language, c.hash = $hash, c.resolve = $resolve,
+            c.service = $service
         """
         assert self._driver is not None
         meta = chunk.to_metadata()
         params = {k: meta[k] for k in
                   ("name", "qualified_name", "file_path",
-                   "start_line", "end_line", "scope", "docstring", "language", "hash")}
+                   "start_line", "end_line", "scope", "docstring", "language", "hash",
+                   "service")}
         params["type"] = meta["chunk_type"]
         params["resolve"] = json.dumps(chunk.resolve_info())
         with self._driver.session() as session:
@@ -406,6 +418,7 @@ class GraphStore:
                 "language": meta.get("language", ""),
                 "hash": meta.get("hash", ""),
                 "resolve": json.dumps(chunk.resolve_info()),
+                "service": meta.get("service", ""),
             })
 
             # 1. Scope / DEFINES edge: class -> member method
@@ -430,7 +443,8 @@ class GraphStore:
             c.type = row.type, c.file_path = row.file_path,
             c.start_line = row.start_line, c.end_line = row.end_line,
             c.scope = row.scope, c.docstring = row.docstring,
-            c.language = row.language, c.hash = row.hash, c.resolve = row.resolve
+            c.language = row.language, c.hash = row.hash, c.resolve = row.resolve,
+            c.service = row.service
         """
 
         assert self._driver is not None
@@ -608,7 +622,8 @@ class GraphStore:
                 {"node_id": n, "name": d.get("name", ""),
                  "qualified_name": d.get("qualified_name") or d.get("name", ""),
                  "file_path": d.get("file_path", ""), "chunk_type": d.get("chunk_type", ""),
-                 "language": d.get("language", ""), "resolve": d.get("resolve") or {}}
+                 "language": d.get("language", ""), "resolve": d.get("resolve") or {},
+                 "start_line": d.get("start_line", 0), "end_line": d.get("end_line", 0)}
                 for n, d in self.nx_graph.nodes(data=True)
                 if d.get("file_path") and d.get("type") != "stub"
             ]
@@ -619,10 +634,66 @@ class GraphStore:
                 MATCH (c:Chunk {ns: $ns}) WHERE c.id IS NOT NULL
                 RETURN c.node_id AS node_id, c.name AS name, c.qualified_name AS qualified_name,
                        c.file_path AS file_path, c.type AS chunk_type, c.language AS language,
-                       c.resolve AS resolve
+                       c.resolve AS resolve, c.start_line AS start_line, c.end_line AS end_line
             """, ns=self._ns)
             return [{**r.data(), "resolve": json.loads(r["resolve"]) if r["resolve"] else {}}
                     for r in rows if r["node_id"]]
+
+    def replace_service_links(self, links: list) -> int:
+        """Replace all cross-service edges with `links` (kitsune.services.linker.Link).
+
+        Each link becomes an edge from the calling function to the handler. When
+        the handler isn't indexed (e.g. an unsupported language), the edge points
+        at a node for the target service itself. "possible" links are stored with
+        ambiguous=True, like uncertain in-service calls.
+        """
+        rows = []
+        for link in links:
+            if not link.client_node:
+                continue
+            target = link.server_node or f"service::{link.server_service}"
+            rows.append({"s": link.client_node, "t": target, "type": _LINK_EDGE[link.kind],
+                         "service": link.server_service, "method": link.method,
+                         "path": link.path, "a": link.confidence != "confirmed"})
+        if self.use_fallback:
+            assert self.nx_graph is not None
+            old = [(u, v) for u, v, d in self.nx_graph.edges(data=True)
+                   if d.get("type") in SERVICE_EDGE_TYPES]
+            self.nx_graph.remove_edges_from(old)
+            for n in [n for n, d in self.nx_graph.nodes(data=True)
+                      if d.get("type") == "service" and self.nx_graph.degree(n) == 0]:
+                self.nx_graph.remove_node(n)
+            for row in rows:
+                if row["s"] not in self.nx_graph:
+                    continue
+                if row["t"].startswith("service::") and row["t"] not in self.nx_graph:
+                    self.nx_graph.add_node(row["t"], name=row["service"], qualified_name=row["service"],
+                                           type="service", service=row["service"])
+                if row["t"] in self.nx_graph and not self.nx_graph.has_edge(row["s"], row["t"]):
+                    self.nx_graph.add_edge(row["s"], row["t"], type=row["type"], ambiguous=row["a"],
+                                           method=row["method"], path=row["path"])
+            return len(rows)
+        if not self._driver:
+            return 0
+        with self._driver.session() as session:
+            for rel in SERVICE_EDGE_TYPES:
+                session.run(f"MATCH (:Chunk {{ns: $ns}})-[r:{rel}]->() DELETE r", ns=self._ns)
+            for rel in SERVICE_EDGE_TYPES:
+                batch = [dict(r, s=self._nid(r["s"]),
+                              t=r["t"] if r["t"].startswith("service::") else self._nid(r["t"]))
+                         for r in rows if r["type"] == rel]
+                for i in range(0, len(batch), 1000):
+                    session.run(f"""
+                        UNWIND $rows AS row
+                        MATCH (s:Chunk {{id: row.s}})
+                        MERGE (t:Chunk {{id: row.t}})
+                          ON CREATE SET t.ns = $ns, t.name = row.service,
+                                        t.qualified_name = row.service, t.type = 'service',
+                                        t.service = row.service
+                        MERGE (s)-[r:{rel}]->(t)
+                        SET r.ambiguous = row.a, r.method = row.method, r.path = row.path
+                    """, rows=batch[i:i + 1000], ns=self._ns)
+        return len(rows)
 
     def _classify_external(self, name: str):
         """Library role of an external callee ("pkg::method", or a bare name)."""
@@ -720,7 +791,8 @@ class GraphStore:
 
     def get_related(self, symbol: str, direction: str = "callees", depth: int = 1,
                     include_external: bool = False,
-                    include_ambiguous: bool = False) -> list[dict]:
+                    include_ambiguous: bool = False,
+                    cross_service: bool = False) -> list[dict]:
         """Callers or callees of a symbol, with where each one lives.
 
         Unlike get_dependencies/get_upstream_callers (bare names), this tells
@@ -740,8 +812,13 @@ class GraphStore:
         include_ambiguous:
             Also follow calls the resolver could not pin to one definition
             (e.g. `obj.save()` with several `save` methods) -- "possible" links.
+        cross_service:
+            Also follow calls between services (HTTP / gRPC / queue edges found by
+            index_system), e.g. the front-end function that calls this endpoint.
+            "possible" cross-service links count as ambiguous.
         """
         downstream = direction == "callees"
+        edge_types = (EDGE_CALLS,) + (SERVICE_EDGE_TYPES if cross_service else ())
         if self.use_fallback:
             assert self.nx_graph is not None
             results: dict[str, dict] = {}
@@ -758,7 +835,7 @@ class GraphStore:
                     for m in neighbors:
                         edge = (self.nx_graph.get_edge_data(n, m) if downstream
                                 else self.nx_graph.get_edge_data(m, n))
-                        if not edge or edge.get("type") != EDGE_CALLS:
+                        if not edge or edge.get("type") not in edge_types:
                             continue
                         if edge.get("ambiguous") and not include_ambiguous:
                             continue
@@ -766,7 +843,7 @@ class GraphStore:
                         if attrs.get("type") == "stub" and not include_external:
                             continue
                         if m not in results:
-                            results[m] = _related_record(attrs, hop)
+                            results[m] = _related_record(attrs, hop, edge.get("type", EDGE_CALLS))
                         next_frontier.append(m)
                 frontier = next_frontier
             return sorted(results.values(), key=lambda r: (r["depth"], r["qualified_name"]))
@@ -774,9 +851,9 @@ class GraphStore:
         if not self._driver:
             return []
         if downstream:
-            pattern = f"(start:Chunk)-[:CALLS*1..{depth}]->(other)"
+            pattern = f"(start:Chunk)-[:{'|'.join(edge_types)}*1..{depth}]->(other)"
         else:
-            pattern = f"(other:Chunk)-[:CALLS*1..{depth}]->(start:Chunk)"
+            pattern = f"(other:Chunk)-[:{'|'.join(edge_types)}*1..{depth}]->(start:Chunk)"
         external_filter = "" if include_external else "AND other.id IS NOT NULL"
         ambiguous_filter = "" if include_ambiguous else _NO_AMBIGUOUS
         query = f"""
@@ -785,11 +862,12 @@ class GraphStore:
               {external_filter} {ambiguous_filter}
         RETURN other.name AS name, other.qualified_name AS qualified_name,
                other.file_path AS file_path, other.start_line AS start_line,
-               min(length(p)) AS depth
+               other.service AS service, min(length(p)) AS depth,
+               head(collect(type(last(relationships(p))))) AS via
         ORDER BY depth, qualified_name
         """
         with self._driver.session() as session:
-            return [_related_record(r.data(), r["depth"])
+            return [_related_record(r.data(), r["depth"], r["via"])
                     for r in session.run(query, name=symbol, ns=self._ns)]
 
     def get_dependencies(self, chunk_name: str, depth: int = 1,

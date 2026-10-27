@@ -290,6 +290,115 @@ class RepositoryKnowledgeEngine:
         from kitsune.graph.traversal import get_impact_analysis
         return get_impact_analysis(self.graph_store, function_name, max_depth)
 
+    # ── Multi-repo systems (kitsune/services) ─────────────────────────────
+
+    def index_system(self, source, incremental: bool = True) -> dict:
+        """Index a whole system of services and connect them.
+
+        `source` is a folder of cloned repos, a monorepo (every directory with a
+        build/deploy manifest is a service), a list of repo paths, or a
+        {service_name: path} dict. Each service is indexed with its label; calls
+        are resolved inside each service; then HTTP / gRPC / queue contracts are
+        extracted and matched across services (see service_map()).
+        """
+        import json
+        from kitsune.services.discovery import discover_services
+
+        services = discover_services(source)
+        per_service = {}
+        for name, path in services.items():
+            logger.info(f"Indexing service {name}: {path}")
+            m = self.indexer.index_directory(path, extensions=self.SUPPORTED_EXTENSIONS,
+                                             incremental=incremental, service=name,
+                                             link_calls=False)
+            per_service[name] = {"path": str(path), "files_indexed": m.total_files,
+                                 "files_unchanged": m.skipped_files, "chunks": m.total_chunks,
+                                 "errors": m.errors[:20]}
+        call_edges = self.indexer.link_calls([str(p) for p in services.values()])
+        links = self.link_services(services)
+        self.cache.clear()
+        chunks_for_concepts = self._collect_chunks_from_store()
+        if chunks_for_concepts:
+            self.concept_store.save(self.concept_extractor.extract(chunks_for_concepts))
+        summary = {"services": per_service, "call_edges": call_edges,
+                   "cross_service_links": len(links),
+                   "confirmed_links": sum(1 for l in links if l.confidence == "confirmed")}
+        logger.info(f"Indexed system: {json.dumps({k: v for k, v in summary.items() if k != 'services'})}")
+        return summary
+
+    def link_services(self, services: dict) -> list:
+        """Extract contracts of `services` ({name: path}) and connect them in the graph."""
+        import json
+        from pathlib import Path
+        from kitsune.services.contracts import extract_contracts, _key
+        from kitsune.services.linker import link_contracts, service_map
+
+        symbols: dict[str, list[tuple]] = {}
+        for d in self.graph_store.all_definitions():
+            if d.get("name") and d.get("start_line"):
+                symbols.setdefault(_key(d["file_path"]), []).append(
+                    (d["start_line"], d.get("end_line") or d["start_line"], d["node_id"],
+                     d.get("qualified_name") or d["name"]))
+        contracts = extract_contracts({n: Path(p) for n, p in services.items()}, symbols)
+        links = link_contracts(contracts, list(services))
+        self.graph_store.replace_service_links(links)
+        self.graph_store.save()
+        system = {"services": {n: str(p) for n, p in services.items()},
+                  "contracts": contracts.to_dict(),
+                  "links": [l.to_dict() for l in links],
+                  "service_map": service_map(links)}
+        (Path(self.data_dir) / "system.json").write_text(json.dumps(system, indent=1),
+                                                         encoding="utf-8")
+        self._system = system
+        return links
+
+    def _load_system(self) -> dict:
+        import json
+        from pathlib import Path
+        if getattr(self, "_system", None) is None:
+            path = Path(self.data_dir) / "system.json"
+            self._system = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        return self._system
+
+    def service_map(self) -> dict:
+        """Which service calls which, over what (HTTP / gRPC / queue), with endpoints."""
+        system = self._load_system()
+        return {"services": sorted(system.get("services", {})),
+                **system.get("service_map", {"edges": []})}
+
+    def get_service_links(self, service: str | None = None, direction: str = "both") -> list[dict]:
+        """Cross-service links touching `service` (all links if None).
+
+        direction: "out" (calls it makes), "in" (calls it receives), or "both".
+        """
+        links = self._load_system().get("links", [])
+        if service is None:
+            return links
+        return [l for l in links
+                if (direction in ("out", "both") and l["client_service"] == service)
+                or (direction in ("in", "both") and l["server_service"] == service)]
+
+    def get_endpoint_callers(self, path: str, method: str | None = None,
+                             service: str | None = None) -> list[dict]:
+        """Every function, in any service, that calls an endpoint / rpc / topic.
+
+        `path` is an HTTP path ("/carts/{id}/items"), "Service/Rpc", or a topic.
+        """
+        from kitsune.services.contracts import normalize_path, paths_match
+        want = normalize_path(path) if path.startswith("/") else path
+        result = []
+        for l in self._load_system().get("links", []):
+            if service and l["server_service"] != service:
+                continue
+            if method and l["method"].upper() not in (method.upper(), "ANY"):
+                continue
+            lp = l["path"]
+            ok = (paths_match(want, lp, False) >= 0) if want.startswith("/") and lp.startswith("/") \
+                else (lp == want or lp.endswith("/" + want) or lp.endswith("." + want))
+            if ok:
+                result.append(l)
+        return result
+
     def get_external_services(self, symbol: str | None = None) -> list[dict]:
         """Return all external third-party services, APIs, and databases invoked."""
         return self.graph_store.get_external_services(symbol)

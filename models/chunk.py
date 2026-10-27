@@ -81,6 +81,7 @@ class Chunk:
     hash: str = ""
     concept: str = ""
     id_suffix: str = ""      # disambiguates repeated names in one file (overloads, setters)
+    service: str = ""        # service/repo this chunk belongs to (multi-repo systems)
     # Facts for call resolution (graph/resolver.py) — kept in the graph store only
     call_refs: list[str] = field(default_factory=list)       # "receiver|name" per call site
     var_types: dict[str, str] = field(default_factory=dict)  # variable → type name
@@ -98,6 +99,7 @@ class Chunk:
             "chunk_type": self.chunk_type,
             "scope": self.scope,
             "decorators": self.decorators,
+            "service": self.service,
         }
 
     def __post_init__(self):
@@ -140,6 +142,7 @@ class Chunk:
             "hash": self.hash,
             "concept": self.concept,
             "loc": self.loc,
+            "service": self.service,
         }
 
     def __repr__(self) -> str:

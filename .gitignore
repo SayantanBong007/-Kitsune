@@ -11,3 +11,4 @@ daemon.py
 service_fabric.py
 parser/scip_loader.py
 tests/test_s_tier.py
+eval/external/

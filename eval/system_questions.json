@@ -1,0 +1,706 @@
+{
+  "_doc": "Ground truth for eval/run_system_eval.py, written by reading each project's source (not from Kitsune output). links: endpoint-level cross-service calls [client, server, kind, method, path]. runtime_edges: service pairs that talk at runtime but whose endpoint is only known at runtime (count for service-map recall; a 'possible' link is the best possible result). forbidden: service pairs that must NOT be linked. impact: who (which services) is affected when a handler changes.",
+  "systems": {
+    "sockshop": {
+      "source": "external/sockshop",
+      "upstream": "https://github.com/microservices-demo (one repo per service)",
+      "links": [
+        [
+          "front-end",
+          "carts",
+          "http",
+          "GET",
+          "/carts/{*}/items"
+        ],
+        [
+          "front-end",
+          "carts",
+          "http",
+          "DELETE",
+          "/carts/{*}"
+        ],
+        [
+          "front-end",
+          "carts",
+          "http",
+          "DELETE",
+          "/carts/{*}/items/{*}"
+        ],
+        [
+          "front-end",
+          "carts",
+          "http",
+          "POST",
+          "/carts/{*}/items"
+        ],
+        [
+          "front-end",
+          "carts",
+          "http",
+          "PATCH",
+          "/carts/{*}/items"
+        ],
+        [
+          "front-end",
+          "carts",
+          "http",
+          "GET",
+          "/carts/{*}/merge"
+        ],
+        [
+          "front-end",
+          "catalogue",
+          "http",
+          "GET",
+          "/catalogue/{*}"
+        ],
+        [
+          "front-end",
+          "catalogue",
+          "http",
+          "GET",
+          "/tags"
+        ],
+        [
+          "front-end",
+          "orders",
+          "http",
+          "POST",
+          "/orders"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "GET",
+          "/customers/{*}"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "GET",
+          "/cards/{*}"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "GET",
+          "/customers"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "GET",
+          "/addresses"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "GET",
+          "/cards"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "POST",
+          "/customers"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "POST",
+          "/addresses"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "POST",
+          "/cards"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "GET",
+          "/customers/{*}/cards"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "GET",
+          "/customers/{*}/addresses"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "DELETE",
+          "/customers/{*}"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "DELETE",
+          "/addresses/{*}"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "DELETE",
+          "/cards/{*}"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "POST",
+          "/register"
+        ],
+        [
+          "front-end",
+          "user",
+          "http",
+          "GET",
+          "/login"
+        ],
+        [
+          "orders",
+          "payment",
+          "http",
+          "POST",
+          "/paymentAuth"
+        ],
+        [
+          "orders",
+          "shipping",
+          "http",
+          "POST",
+          "/shipping"
+        ],
+        [
+          "shipping",
+          "queue-master",
+          "queue",
+          "publish",
+          "shipping-task"
+        ]
+      ],
+      "runtime_edges": [
+        [
+          "front-end",
+          "orders",
+          "http"
+        ],
+        [
+          "front-end",
+          "catalogue",
+          "http"
+        ],
+        [
+          "orders",
+          "user",
+          "http"
+        ],
+        [
+          "orders",
+          "carts",
+          "http"
+        ]
+      ],
+      "notes": "front-end GET /orders/search/customerId is served by Spring Data REST (no annotated handler), so only a service-level link is possible.",
+      "forbidden": [
+        [
+          "orders",
+          "front-end"
+        ],
+        [
+          "carts",
+          "front-end"
+        ],
+        [
+          "user",
+          "front-end"
+        ],
+        [
+          "payment",
+          "orders"
+        ],
+        [
+          "queue-master",
+          "shipping"
+        ]
+      ],
+      "impact": [
+        {
+          "q": "Which services are affected if carts changes? (orders reads cart items at runtime)",
+          "service": "carts",
+          "expect": [
+            "front-end",
+            "orders"
+          ]
+        },
+        {
+          "q": "Which services are affected if payment changes?",
+          "service": "payment",
+          "expect": [
+            "orders"
+          ]
+        },
+        {
+          "q": "Which services are affected if queue-master's consumer changes?",
+          "service": "queue-master",
+          "expect": [
+            "shipping"
+          ]
+        }
+      ]
+    },
+    "boutique": {
+      "source": "external/boutique",
+      "upstream": "https://github.com/GoogleCloudPlatform/microservices-demo (monorepo)",
+      "links": [
+        [
+          "frontend",
+          "currencyservice",
+          "grpc",
+          "GetSupportedCurrencies",
+          "hipstershop.CurrencyService/GetSupportedCurrencies"
+        ],
+        [
+          "frontend",
+          "currencyservice",
+          "grpc",
+          "Convert",
+          "hipstershop.CurrencyService/Convert"
+        ],
+        [
+          "frontend",
+          "productcatalogservice",
+          "grpc",
+          "ListProducts",
+          "hipstershop.ProductCatalogService/ListProducts"
+        ],
+        [
+          "frontend",
+          "productcatalogservice",
+          "grpc",
+          "GetProduct",
+          "hipstershop.ProductCatalogService/GetProduct"
+        ],
+        [
+          "frontend",
+          "cartservice",
+          "grpc",
+          "GetCart",
+          "hipstershop.CartService/GetCart"
+        ],
+        [
+          "frontend",
+          "cartservice",
+          "grpc",
+          "EmptyCart",
+          "hipstershop.CartService/EmptyCart"
+        ],
+        [
+          "frontend",
+          "cartservice",
+          "grpc",
+          "AddItem",
+          "hipstershop.CartService/AddItem"
+        ],
+        [
+          "frontend",
+          "shippingservice",
+          "grpc",
+          "GetQuote",
+          "hipstershop.ShippingService/GetQuote"
+        ],
+        [
+          "frontend",
+          "recommendationservice",
+          "grpc",
+          "ListRecommendations",
+          "hipstershop.RecommendationService/ListRecommendations"
+        ],
+        [
+          "frontend",
+          "adservice",
+          "grpc",
+          "GetAds",
+          "hipstershop.AdService/GetAds"
+        ],
+        [
+          "frontend",
+          "checkoutservice",
+          "grpc",
+          "PlaceOrder",
+          "hipstershop.CheckoutService/PlaceOrder"
+        ],
+        [
+          "checkoutservice",
+          "productcatalogservice",
+          "grpc",
+          "GetProduct",
+          "hipstershop.ProductCatalogService/GetProduct"
+        ],
+        [
+          "checkoutservice",
+          "shippingservice",
+          "grpc",
+          "GetQuote",
+          "hipstershop.ShippingService/GetQuote"
+        ],
+        [
+          "checkoutservice",
+          "shippingservice",
+          "grpc",
+          "ShipOrder",
+          "hipstershop.ShippingService/ShipOrder"
+        ],
+        [
+          "checkoutservice",
+          "currencyservice",
+          "grpc",
+          "Convert",
+          "hipstershop.CurrencyService/Convert"
+        ],
+        [
+          "checkoutservice",
+          "cartservice",
+          "grpc",
+          "GetCart",
+          "hipstershop.CartService/GetCart"
+        ],
+        [
+          "checkoutservice",
+          "cartservice",
+          "grpc",
+          "EmptyCart",
+          "hipstershop.CartService/EmptyCart"
+        ],
+        [
+          "checkoutservice",
+          "paymentservice",
+          "grpc",
+          "Charge",
+          "hipstershop.PaymentService/Charge"
+        ],
+        [
+          "checkoutservice",
+          "emailservice",
+          "grpc",
+          "SendOrderConfirmation",
+          "hipstershop.EmailService/SendOrderConfirmation"
+        ],
+        [
+          "recommendationservice",
+          "productcatalogservice",
+          "grpc",
+          "ListProducts",
+          "hipstershop.ProductCatalogService/ListProducts"
+        ]
+      ],
+      "runtime_edges": [
+        [
+          "loadgenerator",
+          "frontend",
+          "http"
+        ]
+      ],
+      "notes": "cartservice is C# (not parsed by Kitsune): links to it can only be inferred from the proto. loadgenerator uses relative URLs against a host given on the command line, so its links can only be 'possible'.",
+      "forbidden": [
+        [
+          "currencyservice",
+          "currencyservice"
+        ],
+        [
+          "adservice",
+          "adservice"
+        ],
+        [
+          "emailservice",
+          "emailservice"
+        ],
+        [
+          "productcatalogservice",
+          "frontend"
+        ],
+        [
+          "paymentservice",
+          "checkoutservice"
+        ]
+      ],
+      "impact": [
+        {
+          "q": "Which services are affected if productcatalogservice changes?",
+          "service": "productcatalogservice",
+          "expect": [
+            "frontend",
+            "checkoutservice",
+            "recommendationservice"
+          ]
+        },
+        {
+          "q": "Which services are affected if paymentservice changes?",
+          "service": "paymentservice",
+          "expect": [
+            "checkoutservice"
+          ]
+        },
+        {
+          "q": "Which services are affected if cartservice changes?",
+          "service": "cartservice",
+          "expect": [
+            "frontend",
+            "checkoutservice"
+          ]
+        }
+      ]
+    },
+    "petclinic-ms": {
+      "source": "external/petclinic-ms",
+      "upstream": "https://github.com/spring-petclinic/spring-petclinic-microservices (monorepo, Spring Cloud)",
+      "held_out": "Ground truth written before Kitsune was run on this system (2026-10-27); not used to tune extraction rules.",
+      "links": [
+        [
+          "api-gateway",
+          "customers-service",
+          "http",
+          "GET",
+          "/owners/{*}"
+        ],
+        [
+          "api-gateway",
+          "visits-service",
+          "http",
+          "GET",
+          "/pets/visits"
+        ],
+        [
+          "genai-service",
+          "customers-service",
+          "http",
+          "GET",
+          "/owners"
+        ],
+        [
+          "genai-service",
+          "customers-service",
+          "http",
+          "POST",
+          "/owners/{*}/pets"
+        ],
+        [
+          "genai-service",
+          "customers-service",
+          "http",
+          "POST",
+          "/owners"
+        ],
+        [
+          "genai-service",
+          "vets-service",
+          "http",
+          "GET",
+          "/vets"
+        ]
+      ],
+      "runtime_edges": [
+        [
+          "api-gateway",
+          "vets-service",
+          "http"
+        ],
+        [
+          "api-gateway",
+          "genai-service",
+          "http"
+        ]
+      ],
+      "notes": "Service names are the declared spring.application.name values. The gateway also routes /api/vet/**, /api/visit/**, /api/customer/**, /api/genai/** to services in application.yml (Spring Cloud Gateway config, not code).",
+      "forbidden": [
+        [
+          "customers-service",
+          "api-gateway"
+        ],
+        [
+          "vets-service",
+          "genai-service"
+        ],
+        [
+          "customers-service",
+          "genai-service"
+        ],
+        [
+          "visits-service",
+          "api-gateway"
+        ]
+      ],
+      "impact": [
+        {
+          "q": "Which services are affected if customers-service changes?",
+          "service": "customers-service",
+          "expect": [
+            "api-gateway",
+            "genai-service"
+          ]
+        },
+        {
+          "q": "Which services are affected if visits-service changes?",
+          "service": "visits-service",
+          "expect": [
+            "api-gateway"
+          ]
+        },
+        {
+          "q": "Which services are affected if vets-service changes?",
+          "service": "vets-service",
+          "expect": [
+            "api-gateway",
+            "genai-service"
+          ]
+        }
+      ]
+    },
+    "robot-shop": {
+      "source": "external/robot-shop",
+      "upstream": "https://github.com/instana/robot-shop (monorepo; Node, Java, Python, Go, PHP; RabbitMQ)",
+      "held_out": "Ground truth written before Kitsune was run on this system (2026-10-27).",
+      "links": [
+        [
+          "cart",
+          "catalogue",
+          "http",
+          "GET",
+          "/product/{*}"
+        ],
+        [
+          "payment",
+          "user",
+          "http",
+          "GET",
+          "/check/{*}"
+        ],
+        [
+          "payment",
+          "user",
+          "http",
+          "POST",
+          "/order/{*}"
+        ],
+        [
+          "payment",
+          "cart",
+          "http",
+          "DELETE",
+          "/cart/{*}"
+        ],
+        [
+          "shipping",
+          "cart",
+          "http",
+          "POST",
+          "/shipping/{*}"
+        ],
+        [
+          "payment",
+          "dispatch",
+          "queue",
+          "publish",
+          "orders"
+        ]
+      ],
+      "runtime_edges": [
+        [
+          "web",
+          "catalogue",
+          "http"
+        ],
+        [
+          "web",
+          "user",
+          "http"
+        ],
+        [
+          "web",
+          "cart",
+          "http"
+        ],
+        [
+          "web",
+          "shipping",
+          "http"
+        ],
+        [
+          "web",
+          "payment",
+          "http"
+        ],
+        [
+          "web",
+          "ratings",
+          "http"
+        ]
+      ],
+      "notes": "Hosts come from env vars with service-name defaults (CATALOGUE_HOST || 'catalogue'). shipping builds the cart URL in Controller and passes it through CartHelper's constructor. web routes /api/* to services in its nginx config (proxy_pass). ratings is PHP (not parsed).",
+      "forbidden": [
+        [
+          "catalogue",
+          "cart"
+        ],
+        [
+          "user",
+          "payment"
+        ],
+        [
+          "cart",
+          "payment"
+        ],
+        [
+          "dispatch",
+          "payment"
+        ],
+        [
+          "cart",
+          "shipping"
+        ]
+      ],
+      "impact": [
+        {
+          "q": "Which services are affected if user changes?",
+          "service": "user",
+          "expect": [
+            "payment",
+            "web"
+          ]
+        },
+        {
+          "q": "Which services are affected if cart changes?",
+          "service": "cart",
+          "expect": [
+            "payment",
+            "shipping",
+            "web"
+          ]
+        },
+        {
+          "q": "Which services are affected if dispatch changes?",
+          "service": "dispatch",
+          "expect": [
+            "payment"
+          ]
+        }
+      ]
+    }
+  }
+}

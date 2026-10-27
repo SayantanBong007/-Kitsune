@@ -1,7 +1,9 @@
 # Kitsune for Microservices — Design Proposal
 
-> **Status:** proposal for review. Nothing in this document is implemented yet unless
-> marked ✅ *exists today*.
+> **Status:** proposal for review, with a working prototype of Phase 1 (service labels,
+> Offers/Calls, matching, cross-service questions). The prototype was tested on four
+> public microservice systems; see [Prototype results](#prototype-results). The open
+> decisions in section 9 still apply before it becomes the production design.
 > **Decision requested:** approve the approach and the open decisions in
 > [section 9](#9-decisions-needed-from-the-architect), so implementation can start with Phase 1.
 
@@ -331,7 +333,34 @@ shared:
 | Shared server (Qdrant + Neo4j), separate systems (namespaces) | ✅ exists, tested on live servers |
 | Keyword search (BM25) | ✅ exists — but as a local file; moving it into Qdrant is new |
 | Incremental updates (only changed files) | ✅ exists |
-| Service labels, Offers/Calls lists, matching, cross-service questions | ❌ new — this proposal |
+| Service labels, Offers/Calls lists, matching, cross-service questions | ⚠️ prototype — tested on 4 public systems (below) |
 | AI-agent access (MCP server) | ⚠️ experimental, not yet released |
 
 </details>
+
+### Prototype results
+
+Four public systems, chosen to cover different styles. The correct answers were written
+by hand from each project's source code, and two systems were kept unseen until the first
+test run.
+
+| System | Services | Languages / style | Links found (precision / recall) |
+|---|---|---|---|
+| Sock Shop | 8 repos | Java, Go, Node · HTTP + RabbitMQ | 100% / 100% |
+| Online Boutique | 12 | Go, C#, Node, Python, Java · gRPC | 100% / 100% |
+| Spring PetClinic Microservices *(unseen)* | 8 | Java · Spring Cloud gateway | 100% / 100% (first run: 0%) |
+| Robot Shop *(unseen)* | 12 | Node, Java, Python, Go, PHP · HTTP + AMQP + nginx | 100% / 100% (first run: 17%) |
+
+Also checked:
+
+- No wrong links: 0 links to services that must not be connected.
+- Impact questions such as "who is affected if cart changes?" are answered correctly in every system.
+- The results are the same on the shared servers (Qdrant + Neo4j) and on the local setup.
+
+**Read the unseen first runs as the honest number.** A new system with a style Kitsune has
+not seen yet can start low. Each fix is generic, not tuned to one project, but the next new
+style may need one too. Links whose URL is only known at run time are reported as
+"possible", never as confirmed.
+
+Reproduce with `python kitsune/eval/fetch_external.py` followed by
+`python kitsune/eval/run_system_eval.py -v`.

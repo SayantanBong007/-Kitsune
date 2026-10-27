@@ -30,7 +30,7 @@ class FakeEmbedder:
         norm = np.linalg.norm(vec)
         return vec / norm if norm else vec
 
-    def encode(self, texts, normalize_embeddings=True, show_progress_bar=False):
+    def encode(self, texts, normalize_embeddings=True, show_progress_bar=False, batch_size=32):
         if isinstance(texts, str):
             return self._one(texts)
         return np.stack([self._one(t) for t in texts])

@@ -30,7 +30,11 @@ def _get_reranker():
         try:
             from sentence_transformers import CrossEncoder
             logger.info(f"Loading reranker model: {RERANKER_MODEL_NAME}")
-            _reranker = CrossEncoder(RERANKER_MODEL_NAME)
+            try:
+                _reranker = CrossEncoder(RERANKER_MODEL_NAME)
+            except Exception:
+                # Hub unreachable: use the cached copy if there is one
+                _reranker = CrossEncoder(RERANKER_MODEL_NAME, local_files_only=True)
             logger.info("Reranker model loaded.")
         except Exception as e:
             logger.warning(f"Could not load reranker model: {e}")

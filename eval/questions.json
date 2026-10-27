@@ -530,6 +530,12 @@
         [
           "engine",
           "index"
+        ],
+        [
+          "service",
+          "contract",
+          "discovery",
+          "linker"
         ]
       ],
       "questions": [
@@ -618,6 +624,7 @@
           "kind": "callers",
           "symbol": "embed_batch",
           "expect": [
+            "Indexer._embed_group",
             "Indexer._store_chunks"
           ],
           "route": [

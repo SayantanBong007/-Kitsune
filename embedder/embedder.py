@@ -34,7 +34,12 @@ def get_model() -> SentenceTransformer:
     global _model
     if _model is None:
         logger.info(f"Loading embedding model: {MODEL_NAME}")
-        _model = SentenceTransformer(MODEL_NAME)
+        try:
+            _model = SentenceTransformer(MODEL_NAME)
+        except Exception as exc:
+            # Network trouble while checking the Hub for updates: use the cached copy
+            logger.warning(f"Could not reach the model hub ({exc}); loading {MODEL_NAME} from cache")
+            _model = SentenceTransformer(MODEL_NAME, local_files_only=True)
         logger.info(f"Embedding model loaded (dim={_model.get_sentence_embedding_dimension()}).")
     return _model
 
@@ -49,20 +54,24 @@ def embed(text: str) -> list[float]:
     return vector.tolist()
 
 
-def embed_batch(texts: list[str], batch_size: int = 64) -> list[list[float]]:
+# Texts handed to the model per encode() call. Within a call the model sorts
+# texts by length, so short chunks are not padded up to a long neighbour's size.
+_ENCODE_WINDOW = 1024
+
+
+def embed_batch(texts: list[str], batch_size: int = 32) -> list[list[float]]:
     """Embed multiple strings at once — 10-20x faster than one-by-one.
 
-    Memory-safe: processes in chunks of `batch_size` to avoid OOM on
-    large codebases (50,000+ chunks). Each batch is embedded and freed
-    before the next one loads.
+    Memory-safe: processes `_ENCODE_WINDOW` texts at a time, so large
+    codebases (50,000+ chunks) never hold every activation at once.
 
     Parameters
     ----------
     texts:
         List of strings to embed.
     batch_size:
-        Number of texts to embed per forward pass. 64 is a good default
-        for bge-small on CPU. Reduce to 32 if memory is tight.
+        Number of texts per forward pass. 32 measured fastest for bge-small
+        on CPU (larger batches pad more).
 
     Returns
     -------
@@ -71,13 +80,14 @@ def embed_batch(texts: list[str], batch_size: int = 64) -> list[list[float]]:
     model = get_model()
     all_vectors: list[list[float]] = []
 
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i:i + batch_size]
-        vectors = model.encode(batch, normalize_embeddings=True, show_progress_bar=False)
+    for i in range(0, len(texts), _ENCODE_WINDOW):
+        window = texts[i:i + _ENCODE_WINDOW]
+        vectors = model.encode(window, batch_size=batch_size,
+                               normalize_embeddings=True, show_progress_bar=False)
         all_vectors.extend(vectors.tolist() if hasattr(vectors, 'tolist') else
                            [v.tolist() for v in vectors])
 
-        if i % (batch_size * 10) == 0 and i > 0:
+        if i > 0:
             logger.info(f"  Embedded {i}/{len(texts)} chunks...")
 
     return all_vectors
