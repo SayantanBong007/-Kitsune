@@ -79,6 +79,13 @@ _URL_BUILDERS = {"format", "Sprintf", "sprintf", "create", "URL", "URI", "resolv
                  "toUri", "toURI", "fromUriString", "parse", "urljoin", "path", "build",
                  "wrapHTTP", "toString", "replace", "concat"}
 # Callees that are certainly HTTP requests (needed when the target service is unknown)
+# Env-var suffixes that mark a service address: CART_HOST, USER_SERVICE_ADDR...
+_ENV_SUFFIX = r"(_SERVICE)?_(HOST|HOSTNAME|ADDR|ADDRESS|URL|URI|ENDPOINT|SVC|SERVICE)$"
+# Functions that take a URL but are never requests: a URL passed to them teaches nothing
+_NOT_HTTP = re.compile(r"^(log|print|debug|info|warn|warning|error|trace|fatal|assert\w*|expect|"
+                       r"equal\w*|format\w*|str|string|append|add|push|set|contains|startsWith|"
+                       r"endsWith|match\w*|test|includes|indexOf|split|encode\w*|decode\w*|"
+                       r"quote|unquote|Errorf|Printf|Println|Sprintf)$", re.I)
 _HTTP_CALL_NAMES = {"request", "fetch", "get", "post", "put", "delete", "patch", "head",
                     "uri", "url",
                     "getForObject", "postForObject", "getForEntity", "postForEntity", "exchange",
@@ -120,6 +127,9 @@ class Call:
 class ServiceContracts:
     offers: list[Offer] = field(default_factory=list)
     calls: list[Call] = field(default_factory=list)
+    # for Kitsune's lore (see services/lore.py)
+    observations: list[tuple[str, str, str]] = field(default_factory=list)  # (kind, value, service)
+    blind_spots: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {"offers": [asdict(o) for o in self.offers], "calls": [asdict(c) for c in self.calls]}
@@ -254,18 +264,30 @@ def _last_name(text: str) -> str:
 class ContractExtractor:
     """Extracts offers and calls for all services of one system."""
 
-    def __init__(self, services: dict[str, Path], symbols: dict[str, list[tuple]] | None = None):
+    def __init__(self, services: dict[str, Path], symbols: dict[str, list[tuple]] | None = None,
+                 hints: dict | None = None):
         """
         services: {service_name: path}
         symbols:  {normalized file path: [(start_line, end_line, node_id, qualified_name)]}
                   — the indexed chunks, used to attach records to functions.
+        hints:    what Kitsune has learned or been taught (Lore.hints): extra host
+                  aliases, env vars, env-var suffixes and HTTP client functions.
         """
+        hints = hints or {}
         self.services = {name: Path(p) for name, p in services.items()}
         self.symbols = symbols or {}
         self.hosts: dict[str, str] = {}
         for name, path in self.services.items():
             for alias in service_aliases(name, path):
                 self.hosts.setdefault(alias, name)
+        for alias, name in hints.get("hosts", {}).items():
+            if name in self.services:
+                self.hosts[alias.lower()] = name
+        self.taught_env = {v.upper(): s for v, s in hints.get("env", {}).items() if s in self.services}
+        self.env_suffixes = sorted(hints.get("env_suffixes", ()), key=len, reverse=True)
+        self.http_clients = _HTTP_CALL_NAMES | set(hints.get("http_clients", ()))
+        self.observations: list[tuple[str, str, str]] = []
+        self.blind_spots: list[dict] = []
         self.files: dict[str, list[_File]] = {}
         self.constants: dict[str, dict[str, list[tuple[_File, object]]]] = {}
         self.protos: dict[str, list[str]] = {}       # "pkg.Service" → [rpc, ...]
@@ -444,6 +466,10 @@ class ContractExtractor:
             # the configured value is unknown, the default names the service
             left = self.evaluate(service, f, node.child_by_field_name("left"), depth + 1, seen)
             right = self.evaluate(service, f, node.child_by_field_name("right"), depth + 1, seen)
+            env = re.match(r"(?:process\.env|os\.environ)\W+([A-Z][A-Z0-9_]+)",
+                           f.text(node.child_by_field_name("left")))
+            if env:
+                self._observe_env(service, env.group(1), right)
             return left if left.replace("{*}", "") else right
         if t in ("binary_expression", "binary_operator"):
             op = node.child_by_field_name("operator")
@@ -463,7 +489,7 @@ class ContractExtractor:
         if t in ("member_expression", "attribute", "subscript", "subscript_expression") and \
                 re.match(r"(process\.env|os\.environ|ENV)\b", f.text(node)):
             var = re.findall(r"[A-Z][A-Z0-9_]+", f.text(node))
-            return self._env_host(var[-1]) if var else "{*}"
+            return self._env_host(var[-1], service) if var else "{*}"
         if t in ("identifier", "member_expression", "field_access", "selector_expression",
                  "attribute", "property_identifier", "field_identifier"):
             name = _last_name(f.text(node))
@@ -517,15 +543,40 @@ class ContractExtractor:
             p = p.parent
         return False
 
-    def _env_host(self, var: str) -> str:
+    def _env_host(self, var: str, service: str = "") -> str:
         """CART_HOST / USER_SERVICE_ADDR / CATALOGUE_URL → a service alias, else unknown."""
-        base = re.sub(r"(_SERVICE)?_(HOST|HOSTNAME|ADDR|ADDRESS|URL|URI|ENDPOINT|SVC|SERVICE)$", "",
-                      var.upper())
-        for cand in (base.lower().replace("_", "-"), base.lower().replace("_", ""),
-                     base.lower().replace("_", "-") + "-service", base.lower().replace("_", "") + "service"):
-            if cand in self.hosts:
-                return cand
+        if var.upper() in self.taught_env:
+            return self.taught_env[var.upper()]
+        bases = [re.sub(_ENV_SUFFIX, "", var.upper())]
+        # suffixes Kitsune learned from other systems: CART_GATEWAY, USER_API_BASE...
+        bases += [var.upper()[:-len(s) - 1] for s in self.env_suffixes
+                  if var.upper().endswith("_" + s) and len(var) > len(s) + 1]
+        for base in bases:
+            for cand in (base.lower().replace("_", "-"), base.lower().replace("_", ""),
+                         base.lower().replace("_", "-") + "-service",
+                         base.lower().replace("_", "") + "service"):
+                if cand in self.hosts:
+                    return cand
+        if re.search(_ENV_SUFFIX, var.upper()):   # looks like an address (PAYMENTS_GW_URL)
+            self.blind_spots.append({"service": service, "kind": "env", "what": var,
+                                     "why": "address env var that names no known service"})
         return "{*}"
+
+    def _observe_env(self, service: str, var: str, value: str):
+        """getenv("CART_GATEWAY", "cart"): the default shows what CART_GATEWAY means,
+        so "_GATEWAY" is this team's suffix for service addresses. Remember it."""
+        var = var.upper()
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]+", var) or re.search(_ENV_SUFFIX, var):
+            return   # not an env var name, or a suffix Kitsune already knows
+        host = re.sub(r"^[a-z]+://", "", value.strip().lower())
+        target = self.hosts.get(re.split(r"[:/{]", host)[0])
+        if not target:
+            return
+        for alias, name in self.hosts.items():
+            prefix = alias.upper().replace("-", "_") + "_"
+            if name == target and var.startswith(prefix) and len(var) > len(prefix):
+                self.observations.append(("env_suffix", var[len(prefix):], service))
+                return
 
     def _args(self, node):
         args = node.child_by_field_name("arguments")
@@ -541,9 +592,11 @@ class ContractExtractor:
                 and args and re.search(r"(env|environ|System|process|config|getenv)", f.text(fn) or "", re.I):
             # getenv("CART_ENDPOINT", "cart") → the default; getenv("CART_HOST") → by name
             if len(args) >= 2:
-                return self.evaluate(service, f, args[1], depth + 1, seen)
+                default = self.evaluate(service, f, args[1], depth + 1, seen)
+                self._observe_env(service, self.evaluate(service, f, args[0], depth + 1, seen), default)
+                return default
             var = self.evaluate(service, f, args[0], depth + 1, seen)
-            return self._env_host(var) if var and "{*}" not in var else "{*}"
+            return self._env_host(var, service) if var and "{*}" not in var else "{*}"
         if fname == "format" and fn is not None and fn.type == "attribute":
             obj = fn.child_by_field_name("object")
             if obj is not None and obj.type == "string":
@@ -652,7 +705,7 @@ class ContractExtractor:
             for m in re.finditer(r"^\s*proxy_pass\s+(?:https?://)?([^/;\s]+)", text, re.M):
                 host = m.group(1)
                 var = re.search(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?", host)
-                alias = self._env_host(var.group(1)) if var else host.split(":")[0].lower()
+                alias = self._env_host(var.group(1), service) if var else host.split(":")[0].lower()
                 target = self.hosts.get(alias, "")
                 if target and target != service:
                     line = text.count("\n", 0, m.start()) + 1
@@ -676,6 +729,8 @@ class ContractExtractor:
                            for o in out.offers}.values())
         out.calls = list({(c.service, c.kind, c.method, c.path, c.target, c.file, c.line): c
                           for c in out.calls}.values())
+        out.observations = sorted(set(self.observations))
+        out.blind_spots = list({(b["service"], b["kind"], b["what"]): b for b in self.blind_spots}.values())
         return out
 
     def _add_offer(self, out, service, f, line, kind, method, path, prefix=False):
@@ -928,9 +983,21 @@ class ContractExtractor:
                     continue
             if not target:
                 # Target unknown: only count it when the callee is certainly an
-                # HTTP request and the URL has a real path
-                if fname not in _HTTP_CALL_NAMES or not path or path == "/":
+                # HTTP request (known, or learned) and the URL has a real path
+                if not path or path == "/":
                     continue
+                if fname not in self.http_clients:
+                    if _HTTP_CLIENT_HINT.search(fname) and not _NOT_HTTP.match(fname):
+                        self.blind_spots.append({
+                            "service": service, "kind": "http", "file": str(f.path), "line": line,
+                            "what": f"{fname}({template})",
+                            "why": "URL with an unknown host passed to a function not known as an HTTP client"})
+                    continue
+            elif fname not in self.http_clients and fname not in _URL_BUILDERS \
+                    and not _NOT_HTTP.match(fname) and path:
+                # A URL of a known service handed to an unfamiliar function: maybe
+                # this team's own HTTP helper (callService(url)). Remember it.
+                self.observations.append(("http_client", fname, service))
             if m not in HTTP_VERBS:
                 m = "GET" if fname == "request" else "ANY"
             self._add_call(out, service, f, line, "http", m, path, target, template)
@@ -1144,6 +1211,6 @@ class ContractExtractor:
                     self._add_offer(out, service, f, n.start_point[0] + 1, "queue", "consume", t)
 
 
-def extract_contracts(services: dict[str, Path], symbols=None) -> ServiceContracts:
-    """Offers and calls of every service in a system."""
-    return ContractExtractor(services, symbols).load().extract()
+def extract_contracts(services: dict[str, Path], symbols=None, hints=None) -> ServiceContracts:
+    """Offers and calls of every service in a system. `hints`: see Lore.hints()."""
+    return ContractExtractor(services, symbols, hints).load().extract()

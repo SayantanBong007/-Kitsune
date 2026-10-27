@@ -364,3 +364,24 @@ style may need one too. Links whose URL is only known at run time are reported a
 
 Reproduce with `python kitsune/eval/fetch_external.py` followed by
 `python kitsune/eval/run_system_eval.py -v`.
+
+### Growing with age (the lore)
+
+Kitsune keeps a memory, the *lore*, between runs, so it gets better the more it is used:
+
+| How it learns | Example | When it is used |
+|---|---|---|
+| **Taught by a person** | "this link is wrong", "host `basket-api` is the cart service", "env var `PAY_GW` points to payment" | Immediately, and again on every re-index of that system |
+| **Habits it notices** | this team names addresses `<SERVICE>_GATEWAY`; this team calls services through `callService(url)` | In every later system, but only after the habit was seen in **2+ different services** |
+| **Blind spots** | address env vars it could not place, URLs passed to unknown helpers, unconfirmed links | Listed for a person to teach |
+
+```python
+engine.blind_spots()                         # what it could not connect
+engine.teach_host("basket-api", "cart")      # links are rebuilt right away
+engine.teach_link("web", "cart", "http", "GET", "/items", correct=False)
+engine.kitsune_age()                         # tails, lessons, habits learned
+```
+
+The lore is one JSON file (`KITSUNE_LORE`, default `kitsune/data/lore.json`). The evaluation
+gives every system a fresh lore, so scores never benefit from what Kitsune saw before.
+`--grow` shares the lore across systems to measure learning on purpose.

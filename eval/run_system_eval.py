@@ -36,13 +36,14 @@ def _key(link) -> tuple:
     return (link["client_service"], link["server_service"], link["kind"], link["method"], link["path"])
 
 
-def evaluate_system(name: str, spec: dict, backend: str, verbose: bool) -> dict:
+def evaluate_system(name: str, spec: dict, backend: str, verbose: bool, lore_path: str) -> dict:
     from kitsune.engine import RepositoryKnowledgeEngine
 
     source = EVAL_DIR / spec["source"]
     if not source.exists():
         raise SystemExit(f"{source} missing — run: python kitsune/eval/fetch_external.py")
     data_dir = tempfile.mkdtemp(prefix=f"kitsune-sys-{name}-")
+    os.environ["KITSUNE_LORE"] = lore_path
     engine = RepositoryKnowledgeEngine(data_dir=data_dir, namespace=f"syseval-{name}")
     engine.clear_all()
     try:
@@ -114,6 +115,9 @@ def main():
     parser.add_argument("--backend", choices=["local", "server"], default="local")
     parser.add_argument("--system", help="evaluate only this system")
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("--grow", action="store_true",
+                        help="share one lore across the systems, in order, and report what Kitsune "
+                             "learned (default: every system starts with no lore, so scores are honest)")
     args = parser.parse_args()
 
     warnings.filterwarnings("ignore")
@@ -127,10 +131,12 @@ def main():
 
     spec = json.loads((EVAL_DIR / "system_questions.json").read_text(encoding="utf-8"))
     results = {}
+    lore_dir = tempfile.mkdtemp(prefix="kitsune-lore-")
     for name, system in spec["systems"].items():
         if args.system and name != args.system:
             continue
-        results[name] = evaluate_system(name, system, args.backend, args.verbose)
+        lore_path = os.path.join(lore_dir, "lore.json" if args.grow else f"{name}.json")
+        results[name] = evaluate_system(name, system, args.backend, args.verbose, lore_path)
 
     keys = [k for k in next(iter(results.values())) if k not in ("links_truth", "links_confirmed")]
     print(f"\nKitsune multi-service eval -- backend={args.backend}")
@@ -140,6 +146,12 @@ def main():
     out = EVAL_DIR / "results"
     out.mkdir(exist_ok=True)
     (out / "system_latest.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
+    if args.grow:
+        from kitsune.services.lore import Lore
+        age = Lore(os.path.join(lore_dir, "lore.json")).age()
+        print(f"\nKitsune grew to {age['tails']} tails ({age['lessons']} lessons): "
+              f"learned {age['learned_habits']}, forming {age['habits_forming']}")
+    shutil.rmtree(lore_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

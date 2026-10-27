@@ -51,3 +51,4 @@ def offline_models(monkeypatch, tmp_path):
     monkeypatch.setenv("NEO4J_URI", "bolt://127.0.0.1:1")
     monkeypatch.setenv("CHROMA_PATH", str(tmp_path / "chroma"))
     monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("KITSUNE_LORE", str(tmp_path / "lore.json"))   # each test starts young

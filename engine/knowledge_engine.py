@@ -315,6 +315,12 @@ class RepositoryKnowledgeEngine:
                                  "files_unchanged": m.skipped_files, "chunks": m.total_chunks,
                                  "errors": m.errors[:20]}
         call_edges = self.indexer.link_calls([str(p) for p in services.values()])
+        lore = self._lore()
+        lore.record_system(self._system_id())
+        try:
+            lore.save()
+        except OSError as e:
+            logger.warning(f"Could not save Kitsune's lore to {lore.path}: {e}")
         links = self.link_services(services)
         self.cache.clear()
         chunks_for_concepts = self._collect_chunks_from_store()
@@ -339,8 +345,11 @@ class RepositoryKnowledgeEngine:
                 symbols.setdefault(_key(d["file_path"]), []).append(
                     (d["start_line"], d.get("end_line") or d["start_line"], d["node_id"],
                      d.get("qualified_name") or d["name"]))
-        contracts = extract_contracts({n: Path(p) for n, p in services.items()}, symbols)
-        links = link_contracts(contracts, list(services))
+        lore, system_id = self._lore(), self._system_id()
+        contracts = extract_contracts({n: Path(p) for n, p in services.items()}, symbols,
+                                      hints=lore.hints(system_id))
+        links = lore.apply_verdicts(system_id, link_contracts(contracts, list(services)))
+        self._remember(lore, system_id, contracts, links)
         self.graph_store.replace_service_links(links)
         self.graph_store.save()
         system = {"services": {n: str(p) for n, p in services.items()},
@@ -351,6 +360,68 @@ class RepositoryKnowledgeEngine:
                                                          encoding="utf-8")
         self._system = system
         return links
+
+    # ── Lore: Kitsune grows with age (see services/lore.py) ───────────────
+
+    def _lore(self):
+        from kitsune.services.lore import Lore
+        return Lore()
+
+    def _system_id(self) -> str:
+        return self.namespace or "default"
+
+    def _remember(self, lore, system_id: str, contracts, links):
+        """Keep what this run taught: habits seen, and what could not be connected."""
+        for kind, value, service in contracts.observations:
+            lore.observe(kind, value, f"{system_id}/{service}")
+        spots = list(contracts.blind_spots)
+        spots += [{"service": l.client_service, "kind": "link", "file": l.client_file,
+                   "line": l.client_line, "what": f"{l.method} {l.path or '?'} -> {l.server_service}",
+                   "why": l.reason}
+                  for l in links if l.confidence != "confirmed"]
+        lore.set_blind_spots(system_id, spots)
+        try:
+            lore.save()
+        except OSError as e:
+            logger.warning(f"Could not save Kitsune's lore to {lore.path}: {e}")
+
+    def _relink(self) -> int:
+        """Re-run linking with the latest lessons (no re-indexing needed)."""
+        services = self._load_system().get("services")
+        return len(self.link_services(services)) if services else 0
+
+    def teach_link(self, client: str, server: str, kind: str, method: str, path: str,
+                   correct: bool) -> int:
+        """Tell Kitsune a link is right (confirms a "possible" one) or wrong (removes it).
+        Remembered for this system on every future re-index. Returns the new link count."""
+        from kitsune.services.lore import link_key
+        lore = self._lore()
+        lore.teach_link(self._system_id(), link_key(client, server, kind, method, path), correct)
+        lore.save()
+        return self._relink()
+
+    def teach_host(self, alias: str, service: str) -> int:
+        """Host `alias` (as written in URLs, e.g. "checkout-api") is `service`."""
+        lore = self._lore()
+        lore.teach_host(self._system_id(), alias, service)
+        lore.save()
+        return self._relink()
+
+    def teach_env(self, var: str, service: str) -> int:
+        """Environment variable `var` (e.g. "PAY_GW") holds the address of `service`."""
+        lore = self._lore()
+        lore.teach_env(self._system_id(), var, service)
+        lore.save()
+        return self._relink()
+
+    def blind_spots(self) -> list[dict]:
+        """What Kitsune could not connect in this system on the last run: address
+        env vars it could not place, URLs passed to unknown helpers, unconfirmed links."""
+        return self._lore().blind_spots(self._system_id())
+
+    def kitsune_age(self) -> dict:
+        """How wise Kitsune has grown: tails, lessons taught, habits learned."""
+        return self._lore().age()
 
     def _load_system(self) -> dict:
         import json
