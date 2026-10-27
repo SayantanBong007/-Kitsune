@@ -2,6 +2,9 @@
 
 > **A system that makes AI truly *understand* your codebase — not just search it.**
 
+> 📘 **New here or presenting Kitsune?** Start with **[KITSUNE.md](KITSUNE.md)**: the full
+> architecture with diagrams, results, and why it is named Kitsune.
+
 Kitsune indexes source code into a hybrid knowledge graph combining semantic embeddings,
 a real dependency graph, and keyword search. When any AI agent asks a question about your
 code, Kitsune retrieves the exact relevant code *plus its full execution context* — in
