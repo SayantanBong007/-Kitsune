@@ -492,7 +492,12 @@
         "__pycache__",
         "eval",
         "tests",
-        ".env"
+        ".env",
+        "_archive",
+        "mcp_server.py",
+        "daemon.py",
+        "service_fabric.py",
+        "scip_loader.py"
       ],
       "concepts": [
         [
@@ -627,7 +632,8 @@
             "CallResolver",
             "CallResolver.resolve_all",
             "GraphStore.all_definitions",
-            "GraphStore.replace_call_edges"
+            "GraphStore.replace_call_edges",
+            "DynamicLibraryCatalog.scan_manifests"
           ],
           "route": [
             "dependency"

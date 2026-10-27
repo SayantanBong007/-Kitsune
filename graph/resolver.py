@@ -23,6 +23,7 @@ from __future__ import annotations
 import posixpath
 from collections import defaultdict
 from dataclasses import dataclass, field
+from kitsune.graph.library_catalog import GLOBAL_CATALOG, DynamicLibraryCatalog
 
 _SELF_NAMES = {"self", "this", "cls", "Self"}
 _SUPER_NAMES = {"super", "super()"}
@@ -45,7 +46,9 @@ def _norm_path(path: str) -> str:
 
 
 class CallResolver:
-    def __init__(self, definitions: list[dict]):
+    def __init__(self, definitions: list[dict], catalog: DynamicLibraryCatalog | None = None):
+        # Where calls into imported external packages are recorded (library roles)
+        self.catalog = catalog if catalog is not None else GLOBAL_CATALOG
         self.defs = [d for d in definitions if d.get("name") and d.get("name") != "<module>"]
         self.module_chunks = [d for d in definitions if d.get("name") == "<module>"]
         self.by_name: dict[str, list[dict]] = defaultdict(list)
@@ -67,6 +70,29 @@ class CallResolver:
             if scope in self.classes:
                 self.methods[(scope, d["name"])].append(d)
 
+        self.implementations: dict[str, list[dict]] = defaultdict(list)
+        self.beans_by_type: dict[str, list[dict]] = defaultdict(list)
+        _BEAN_DECORATORS = {"service", "component", "repository", "controller",
+                            "injectable", "singleton", "bean", "restcontroller"}
+
+        for d in self.defs:
+            if d["resolve"].get("chunk_type", d.get("chunk_type")) == "class":
+                decs = {dec.lower().split("(")[0].strip()
+                        for dec in (d["resolve"].get("decorators") or [])}
+                is_bean = bool(decs & _BEAN_DECORATORS)
+                cls_name = d["name"]
+                cls_qn = d["qualified_name"]
+                if is_bean:
+                    self.beans_by_type[cls_name].append(d)
+                    self.beans_by_type[cls_qn].append(d)
+                for base in (d["resolve"].get("inherits") or []):
+                    base_name = base.split(".")[-1]
+                    self.implementations[base_name].append(d)
+                    self.implementations[base].append(d)
+                    if is_bean:
+                        self.beans_by_type[base_name].append(d)
+                        self.beans_by_type[base].append(d)
+
         # Per-file facts from module-level chunks: imports and module variables
         self.file_imports: dict[str, dict[str, str]] = defaultdict(dict)
         self.file_vars: dict[str, dict[str, str]] = defaultdict(dict)
@@ -75,6 +101,20 @@ class CallResolver:
             self.file_imports[d["file_path"]].update(info.get("import_map") or {})
             if d.get("name") == "<module>":
                 self.file_vars[d["file_path"]].update(info.get("var_types") or {})
+
+    def _implementations_of(self, class_qn: str, beans_only: bool = False) -> list[str]:
+        """Return qualified names of classes that implement or extend class_qn (DI resolution)."""
+        base_name = class_qn.split(".")[-1]
+        impls = self.beans_by_type.get(base_name) or \
+            ([] if beans_only else self.implementations.get(base_name)) or []
+        seen = set()
+        res = []
+        for c in impls:
+            qn = c["qualified_name"]
+            if qn != class_qn and qn not in seen:
+                seen.add(qn)
+                res.append(qn)
+        return res
 
     # ── Lookups ───────────────────────────────────────────────────────────
 
@@ -257,6 +297,20 @@ class CallResolver:
         class_qn = self._type_of_receiver(receiver, src, var_types)
         if class_qn is not None:
             found = self._methods_of(class_qn, name)
+            # Dependency injection / interfaces: a field typed as an interface
+            # (PaymentGateway) really calls the injected implementation
+            # (@Service StripePaymentGateway). Prefer implementations when a
+            # bean implements the type, or when the type itself has no body for
+            # the method. A concrete class's own method still wins otherwise —
+            # self.helper() in a base class must not jump to subclasses.
+            prefer_impls = bool(self._implementations_of(class_qn, beans_only=True)) or not found
+            if prefer_impls:
+                impl_methods = []
+                for impl_qn in self._implementations_of(class_qn):
+                    impl_methods.extend(m for m in self._methods_of(impl_qn, name)
+                                        if m not in impl_methods)
+                if impl_methods:
+                    return (impl_methods, len(impl_methods) > 1)
             return (found, False) if found else None  # known type, method not in repo
         base = receiver.split(".")[0]
         if receiver == base and base in var_types and \
@@ -275,7 +329,24 @@ class CallResolver:
             for ref in src["resolve"].get("call_refs") or []:
                 result = self.resolve_ref(src, ref)
                 if result is None:
-                    externals.add(ref.partition("|")[2])
+                    receiver, _, name = ref.partition("|")
+                    base = receiver.split(".")[0]
+                    pkg = self.file_imports.get(src["file_path"], {}).get(base) if receiver else None
+                    if pkg is None:
+                        # builtin (len), or a method on an object of unknown type
+                        externals.add(name)
+                        continue
+                    # Call into an imported package: keep its provenance
+                    # (stripe::Charge.create) and record it for the library catalog.
+                    sub = receiver.split(".", 1)[1] if "." in receiver else ""
+                    externals.add(f"{pkg}::{sub}.{name}" if sub else f"{pkg}::{name}")
+                    self.catalog.record_call(
+                        package=pkg,
+                        method=name,
+                        caller_node=src["node_id"],
+                        caller_file=src["file_path"],
+                        receiver_var=receiver,
+                    )
                     continue
                 targets, ambiguous = result
                 for target in targets:

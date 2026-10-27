@@ -5,3 +5,9 @@ __pycache__/
 .kitsune_hashes.json
 eval/results/
 mcp_server.py
+_archive/
+# Experimental, not yet released (kept local)
+daemon.py
+service_fabric.py
+parser/scip_loader.py
+tests/test_s_tier.py

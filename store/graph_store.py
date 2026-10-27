@@ -14,20 +14,58 @@ import json
 import logging
 import os
 import pickle
+import re
+from collections import defaultdict
 from pathlib import Path
 
 import networkx as nx
 
+from kitsune.graph.library_catalog import DynamicLibraryCatalog, ExternalLibraryInfo
 from kitsune.models.chunk import Chunk
 
 logger = logging.getLogger(__name__)
+
+
+def _split_identifier(name: str) -> list[str]:
+    """Splits camelCase, PascalCase, snake_case, and dotted/slashed identifiers into lowercased tokens."""
+    if not name:
+        return []
+    cleaned = re.sub(r'[\/\\:._\-()[\]{}"\']+', ' ', str(name))
+    tokens = []
+    for part in cleaned.split():
+        sub = re.findall(r'[A-Z]?[a-z]+|[A-Z]+(?=[A-Z][a-z]|\b)|\d+', part)
+        if sub:
+            tokens.extend([s.lower() for s in sub if len(s) > 1])
+        elif len(part) > 1:
+            tokens.append(part.lower())
+    return tokens
+
+
+def _stem(word: str) -> str:
+    """Lightweight morphological stemmer for code queries."""
+    w = word.lower()
+    if w.endswith("ies") and len(w) > 4:
+        return w[:-3] + "y"
+    if w.endswith("es") and len(w) > 3:
+        return w[:-2]
+    if w.endswith("s") and not w.endswith("ss") and len(w) > 2:
+        return w[:-1]
+    if w.endswith("ing") and len(w) > 4:
+        return w[:-3]
+    if w.endswith("ed") and len(w) > 3:
+        return w[:-2]
+    if w.endswith("tion") and len(w) > 5:
+        return w[:-4]
+    return w
+
 
 # Edge types
 EDGE_CALLS = "CALLS"
 EDGE_EXTENDS = "EXTENDS"          # class inheritance
 EDGE_IMPORTS = "IMPORTS"          # module-level import
 EDGE_DECORATED_BY = "DECORATED_BY"
-_EDGE_TYPES = (EDGE_CALLS, EDGE_EXTENDS, EDGE_IMPORTS, EDGE_DECORATED_BY)
+EDGE_DEFINES = "DEFINES"          # class defines member method
+_EDGE_TYPES = (EDGE_CALLS, EDGE_EXTENDS, EDGE_IMPORTS, EDGE_DECORATED_BY, EDGE_DEFINES)
 
 # Cypher filter: skip call edges the resolver marked ambiguous
 _NO_AMBIGUOUS = "AND ALL(r IN relationships(p) WHERE NOT coalesce(r.ambiguous, false))"
@@ -65,6 +103,8 @@ class GraphStore:
         # its project's namespace (`ns`) and every query filters on it.
         # (The NetworkX fallback is separated by persist_path instead.)
         self._ns = namespace
+        # External libraries seen in *this* project (rebuilt on every call-linking pass)
+        self.catalog = DynamicLibraryCatalog()
         self._driver = None
         self.use_fallback = False
         self.nx_graph: nx.DiGraph | None = None
@@ -73,6 +113,9 @@ class GraphStore:
         )
         # Name → set of node_ids index for O(1) lookup (avoids scanning all nodes)
         self._name_index: dict[str, set[str]] = {}
+        # Sub-token and stem indices for intelligent natural language entrypoint discovery
+        self._token_index: dict[str, set[str]] = {}
+        self._stem_index: dict[str, set[str]] = {}
 
         try:
             from neo4j import GraphDatabase
@@ -100,6 +143,8 @@ class GraphStore:
             # Name/file lookups are filtered by namespace
             "CREATE INDEX chunk_name_ns IF NOT EXISTS FOR (c:Chunk) ON (c.name, c.ns)",
             "CREATE INDEX chunk_file_ns IF NOT EXISTS FOR (c:Chunk) ON (c.file_path, c.ns)",
+            # Full-text index for natural language seed search directly in Neo4j
+            "CREATE FULLTEXT INDEX chunk_fulltext IF NOT EXISTS FOR (c:Chunk) ON EACH [c.name, c.qualified_name, c.docstring]",
         ]
         assert self._driver is not None
         with self._driver.session() as session:
@@ -128,12 +173,16 @@ class GraphStore:
                 data = pickle.load(f)
             self.nx_graph = data.get("graph", nx.DiGraph())
             self._name_index = data.get("name_index", {})
+            self._token_index = data.get("token_index", {})
+            self._stem_index = data.get("stem_index", {})
             logger.info(f"Loaded graph from disk: {self.nx_graph.number_of_nodes()} nodes, "
                         f"{self.nx_graph.number_of_edges()} edges.")
         except Exception as e:
             logger.warning(f"Could not load graph from disk: {e}")
             self.nx_graph = nx.DiGraph()
             self._name_index = {}
+            self._token_index = {}
+            self._stem_index = {}
 
     def _save_to_disk(self):
         """Persist the NetworkX graph to disk as pickle (binary, fast)."""
@@ -144,26 +193,130 @@ class GraphStore:
         path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(path, "wb") as f:
-            pickle.dump({"graph": self.nx_graph, "name_index": self._name_index}, f)
+            pickle.dump({
+                "graph": self.nx_graph,
+                "name_index": self._name_index,
+                "token_index": self._token_index,
+                "stem_index": self._stem_index,
+            }, f)
         logger.debug(f"Persisted graph to disk: {self.nx_graph.number_of_nodes()} nodes, "
                      f"{self.nx_graph.number_of_edges()} edges.")
 
-    def _index_node_name(self, node_id: str, attrs: dict):
-        """Add a node to the name index for O(1) lookup."""
+    @staticmethod
+    def _index_keys(attrs: dict) -> tuple[set[str], set[str], set[str]]:
+        """Keys a node is filed under: (exact/lowercase names, subtokens, stems)."""
         name = attrs.get("name") or attrs.get("qualified_name", "")
-        if name:
-            if name not in self._name_index:
-                self._name_index[name] = set()
-            self._name_index[name].add(node_id)
         qname = attrs.get("qualified_name", "")
-        if qname and qname != name:
-            if qname not in self._name_index:
-                self._name_index[qname] = set()
-            self._name_index[qname].add(node_id)
+        names = {k for n in (name, qname) if n for k in (n, n.lower())}
+        tokens = {tok for text in (name, qname, attrs.get("docstring") or "")
+                  for tok in _split_identifier(text)}
+        return names, tokens, {_stem(t) for t in tokens}
+
+    def _index_node_name(self, node_id: str, attrs: dict):
+        """Add a node to the name, subtoken, and stem indices for exact and fuzzy O(1) lookup."""
+        names, tokens, stems = self._index_keys(attrs)
+        for key in names:
+            self._name_index.setdefault(key, set()).add(node_id)
+        for tok in tokens:
+            self._token_index.setdefault(tok, set()).add(node_id)
+        for stem in stems:
+            self._stem_index.setdefault(stem, set()).add(node_id)
+
+    def _unindex_node(self, node_id: str, attrs: dict):
+        """Remove a node from every lookup index (before it is deleted from the graph)."""
+        names, tokens, stems = self._index_keys(attrs)
+        for index, keys in ((self._name_index, names), (self._token_index, tokens),
+                            (self._stem_index, stems)):
+            for key in keys:
+                ids = index.get(key)
+                if ids is not None:
+                    ids.discard(node_id)
+                    if not ids:
+                        del index[key]
+
+    def _live(self, node_ids) -> list[str]:
+        """Drop ids no longer in the graph (guards against stale index entries)."""
+        if self.use_fallback and self.nx_graph is not None:
+            return [n for n in node_ids if n in self.nx_graph]
+        return list(node_ids)
 
     def _find_nodes_by_name(self, chunk_name: str) -> list[str]:
-        """O(1) lookup of node IDs by name (was O(V) linear scan)."""
-        return list(self._name_index.get(chunk_name, set()))
+        """O(1) lookup of node IDs by exact name or qualified name.
+
+        Also accepts a different letter case and a trailing "()". It never
+        falls back to a *different* symbol (e.g. "Foo.save" -> every "save"):
+        graph answers about a symbol that doesn't exist must be empty, not
+        someone else's callers.
+        """
+        if not chunk_name:
+            return []
+        clean = re.sub(r'\(\s*\)$', '', chunk_name).strip()
+        for key in dict.fromkeys((chunk_name, chunk_name.lower(), clean, clean.lower())):
+            res = self._live(self._name_index.get(key, ()))
+            if res:
+                return res
+        return []
+
+    def search_nodes(self, query: str, limit: int = 5) -> list[str]:
+        """Fuzzy entry-point discovery for *search*: natural language or partial names -> nodes.
+
+        Used to seed retrieval. Graph queries (callers/callees/impact) use exact
+        lookup only, so they never answer for a symbol that wasn't asked about.
+        """
+        if not query:
+            return []
+
+        # 1. Exact match check
+        exact = self._find_nodes_by_name(query)
+        if exact:
+            return exact[:limit]
+
+        # Clean query (strip parens, punctuation)
+        clean_q = re.sub(r'[\/\\:._\-()[\]{}"\']+', ' ', query).strip()
+        clean_exact = self._find_nodes_by_name(clean_q)
+        if clean_exact:
+            return clean_exact[:limit]
+
+        # 2. If Neo4j is available, use Full-Text search index
+        if not self.use_fallback and self._driver:
+            try:
+                words = [w for w in clean_q.split() if len(w) > 2]
+                if words:
+                    lucene_query = " OR ".join([f"{w}~" if len(w) > 3 else f"{w}*" for w in words])
+                    cql = """
+                    CALL db.index.fulltext.queryNodes("chunk_fulltext", $query_str) YIELD node, score
+                    WHERE node.ns = $ns
+                    RETURN node.node_id AS node_id, score
+                    ORDER BY score DESC
+                    LIMIT $limit
+                    """
+                    with self._driver.session() as session:
+                        res = session.run(cql, query_str=lucene_query, ns=self._ns, limit=limit)
+                        node_ids = [r["node_id"] for r in res if r.get("node_id")]
+                        if node_ids:
+                            return node_ids
+            except Exception as e:
+                logger.debug(f"Neo4j fulltext query fallback: {e}")
+
+        # 3. Sub-token & Stem scoring (NetworkX / Fallback)
+        query_tokens = _split_identifier(clean_q)
+        if not query_tokens:
+            return []
+
+        scores: dict[str, float] = defaultdict(float)
+        for tok in query_tokens:
+            for nid in self._token_index.get(tok, set()):
+                scores[nid] += 2.0
+            stem = _stem(tok)
+            for nid in self._stem_index.get(stem, set()):
+                scores[nid] += 1.0
+
+        if not scores:
+            return []
+
+        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        return self._live(nid for nid, _ in ranked)[:limit]
+
 
     # ── Node operations ──────────────────────────────────────────────────
 
@@ -209,6 +362,140 @@ class GraphStore:
             session.run("MATCH (s:Chunk {name: $name, ns: $ns}) WHERE s.id IS NULL "
                         "DETACH DELETE s", name=chunk.name, ns=self._ns)
 
+    def upsert_chunk_nodes_batch(self, chunks: list[Chunk]):
+        """Batch upsert multiple chunk nodes and their DEFINES/EXTENDS/DECORATED_BY edges in Neo4j."""
+        if not chunks:
+            return
+        if self.use_fallback:
+            for c in chunks:
+                self.upsert_chunk_node(c)
+            assert self.nx_graph is not None
+            for c in chunks:
+                if c.name == "<module>":
+                    continue
+                for parent in c.inherits:
+                    self.add_edge(c.node_id, parent, edge_type=EDGE_EXTENDS)
+                for decorator in c.decorators:
+                    self.add_edge(c.node_id, decorator, edge_type=EDGE_DECORATED_BY)
+                if c.scope and c.chunk_type in ("function", "method"):
+                    owner = f"{c.file_path}::{c.scope}"
+                    if owner in self.nx_graph and owner != c.node_id \
+                            and not self.nx_graph.has_edge(owner, c.node_id):
+                        self.nx_graph.add_edge(owner, c.node_id, type=EDGE_DEFINES)
+            return
+
+        rows = []
+        defines_rows = []
+        extends_rows = []
+        decorates_rows = []
+
+        for chunk in chunks:
+            meta = chunk.to_metadata()
+            cid = self._nid(chunk.node_id)
+            rows.append({
+                "id": cid,
+                "node_id": chunk.node_id,
+                "name": meta.get("name", ""),
+                "qualified_name": meta.get("qualified_name") or meta.get("name", ""),
+                "type": meta.get("chunk_type", "function"),
+                "file_path": meta.get("file_path", ""),
+                "start_line": meta.get("start_line", 0),
+                "end_line": meta.get("end_line", 0),
+                "scope": meta.get("scope", ""),
+                "docstring": meta.get("docstring", ""),
+                "language": meta.get("language", ""),
+                "hash": meta.get("hash", ""),
+                "resolve": json.dumps(chunk.resolve_info()),
+            })
+
+            # 1. Scope / DEFINES edge: class -> member method
+            if chunk.scope and chunk.chunk_type in ("function", "method"):
+                parent_scope = chunk.scope.split(".")[-1]
+                defines_rows.append({"parent_name": parent_scope, "child_id": cid,
+                                     "file_path": meta.get("file_path", "")})
+
+            # 2. Inheritance: child -> parent class
+            for parent in chunk.inherits:
+                extends_rows.append({"child_id": cid, "parent_name": parent})
+
+            # 3. Decorators / Annotations: element -> decorator
+            for dec in chunk.decorators:
+                decorates_rows.append({"child_id": cid, "dec_name": dec})
+
+        query_nodes = """
+        UNWIND $rows AS row
+        MERGE (c:Chunk {id: row.id})
+        SET c.ns = $ns, c.node_id = row.node_id,
+            c.name = row.name, c.qualified_name = row.qualified_name,
+            c.type = row.type, c.file_path = row.file_path,
+            c.start_line = row.start_line, c.end_line = row.end_line,
+            c.scope = row.scope, c.docstring = row.docstring,
+            c.language = row.language, c.hash = row.hash, c.resolve = row.resolve
+        """
+
+        assert self._driver is not None
+        with self._driver.session() as session:
+            # 1. Bulk insert nodes
+            for i in range(0, len(rows), 500):
+                session.run(query_nodes, rows=rows[i:i+500], ns=self._ns)
+
+            # 1b. Edges added before a node existed point at an id-less stub with
+            # the same name (e.g. EXTENDS to a class in a file indexed later).
+            # Move them onto the real node, then drop the stubs (same as the
+            # per-chunk upsert_chunk_node did).
+            names = sorted({r["name"] for r in rows if r["name"]})
+            for i in range(0, len(names), 500):
+                batch_names = names[i:i+500]
+                for rel in _EDGE_TYPES:
+                    session.run(f"""
+                    UNWIND $names AS nm
+                    MATCH (src)-[r:{rel}]->(s:Chunk {{name: nm, ns: $ns}}) WHERE s.id IS NULL
+                    MATCH (c:Chunk {{name: nm, ns: $ns}}) WHERE c.id IS NOT NULL
+                    MERGE (src)-[:{rel}]->(c)
+                    DELETE r
+                    """, names=batch_names, ns=self._ns)
+                session.run("""
+                    UNWIND $names AS nm
+                    MATCH (s:Chunk {name: nm, ns: $ns}) WHERE s.id IS NULL
+                          AND NOT coalesce(s.external, false)
+                    DETACH DELETE s
+                """, names=batch_names, ns=self._ns)
+
+            # 2. Bulk link DEFINES edges
+            if defines_rows:
+                query_defines = """
+                UNWIND $rows AS row
+                MATCH (parent:Chunk {name: row.parent_name, ns: $ns, type: 'class',
+                                     file_path: row.file_path})
+                MATCH (child:Chunk {id: row.child_id})
+                WHERE parent.id <> child.id
+                MERGE (parent)-[:DEFINES]->(child)
+                """
+                for i in range(0, len(defines_rows), 500):
+                    session.run(query_defines, rows=defines_rows[i:i+500], ns=self._ns)
+
+            # 3. Bulk link EXTENDS edges
+            if extends_rows:
+                query_extends = """
+                UNWIND $rows AS row
+                MATCH (child:Chunk {id: row.child_id})
+                MERGE (parent:Chunk {name: row.parent_name, ns: $ns})
+                MERGE (child)-[:EXTENDS]->(parent)
+                """
+                for i in range(0, len(extends_rows), 500):
+                    session.run(query_extends, rows=extends_rows[i:i+500], ns=self._ns)
+
+            # 4. Bulk link DECORATED_BY edges
+            if decorates_rows:
+                query_dec = """
+                UNWIND $rows AS row
+                MATCH (child:Chunk {id: row.child_id})
+                MERGE (dec:Chunk {name: row.dec_name, ns: $ns})
+                MERGE (child)-[:DECORATED_BY]->(dec)
+                """
+                for i in range(0, len(decorates_rows), 500):
+                    session.run(query_dec, rows=decorates_rows[i:i+500], ns=self._ns)
+
     def _relink_stub(self, name: str, node_id: str):
         """Point edges that were attached to `stub::<name>` at the real node.
 
@@ -222,8 +509,8 @@ class GraphStore:
             return
         for pred in list(self.nx_graph.predecessors(stub_id)):
             self.nx_graph.add_edge(pred, node_id, **self.nx_graph.get_edge_data(pred, stub_id))
+        self._unindex_node(stub_id, self.nx_graph.nodes[stub_id])
         self.nx_graph.remove_node(stub_id)
-        self._name_index.get(name, set()).discard(stub_id)
 
     def remove_file(self, file_path: str, keep_ids: set[str] | None = None):
         """Drop a file's outgoing edges, and the nodes no longer in it.
@@ -241,8 +528,7 @@ class GraphStore:
                 self.nx_graph.remove_edges_from(list(self.nx_graph.out_edges(node_id)))
                 if node_id not in keep_ids:
                     attrs = self.nx_graph.nodes[node_id]
-                    for key in ("name", "qualified_name"):
-                        self._name_index.get(attrs.get(key, ""), set()).discard(node_id)
+                    self._unindex_node(node_id, attrs)
                     # Keep callers' edges on a stub so they relink if the
                     # function reappears (e.g. it moved to another file).
                     name = attrs.get("name", "")
@@ -338,6 +624,15 @@ class GraphStore:
             return [{**r.data(), "resolve": json.loads(r["resolve"]) if r["resolve"] else {}}
                     for r in rows if r["node_id"]]
 
+    def _classify_external(self, name: str):
+        """Library role of an external callee ("pkg::method", or a bare name)."""
+        if "::" not in name:
+            # No import to tie it to: a builtin (len, print) or a call on an
+            # object whose type isn't known -- don't guess a library role.
+            return ExternalLibraryInfo(name, "Builtin / Unresolved", "Unknown", "low", 0.3)
+        package, _, method = name.partition("::")
+        return self.catalog.classify(package, method=method.split(".")[-1])
+
     def replace_call_edges(self, edges: list[tuple[str, str, bool]],
                            externals: list[tuple[str, str]]) -> int:
         """Replace every CALLS edge with a freshly resolved set.
@@ -359,14 +654,24 @@ class GraphStore:
             for src, name in externals:
                 stub_id = f"stub::{name}"
                 if stub_id not in self.nx_graph:
-                    self.nx_graph.add_node(stub_id, name=name, type="stub")
+                    info = self._classify_external(name)
+                    self.nx_graph.add_node(
+                        stub_id,
+                        name=name,
+                        type="stub",
+                        package=info.package,
+                        category=info.category,
+                        side_effect=info.side_effect,
+                        risk=info.risk_level,
+                        confidence=info.confidence,
+                    )
                     self._index_node_name(stub_id, {"name": name})
                 if src in self.nx_graph and not self.nx_graph.has_edge(src, stub_id):
                     self.nx_graph.add_edge(src, stub_id, type=EDGE_CALLS, ambiguous=False)
             orphans = [n for n, d in self.nx_graph.nodes(data=True)
                        if d.get("type") == "stub" and self.nx_graph.degree(n) == 0]
             for n in orphans:
-                self._name_index.get(self.nx_graph.nodes[n].get("name", ""), set()).discard(n)
+                self._unindex_node(n, self.nx_graph.nodes[n])
             self.nx_graph.remove_nodes_from(orphans)
             return len(edges)
 
@@ -383,11 +688,28 @@ class GraphStore:
                     MERGE (s)-[r:CALLS]->(t) SET r.ambiguous = row.a
                 """, rows=rows)
             for i in range(0, len(externals), 1000):
-                rows = [{"s": self._nid(s), "n": n} for s, n in externals[i:i + 1000]]
+                batch = externals[i:i + 1000]
+                rows = []
+                for s, n in batch:
+                    info = self._classify_external(n)
+                    rows.append({
+                        "s": self._nid(s),
+                        "n": n,
+                        "pkg": info.package,
+                        "cat": info.category,
+                        "side": info.side_effect,
+                        "risk": info.risk_level,
+                        "conf": info.confidence,
+                    })
                 session.run("""
                     UNWIND $rows AS row
                     MATCH (s:Chunk {id: row.s})
                     MERGE (t:Chunk {name: row.n, ns: $ns, external: true})
+                    SET t.package = row.pkg,
+                        t.category = row.cat,
+                        t.side_effect = row.side,
+                        t.risk = row.risk,
+                        t.confidence = row.conf
                     MERGE (s)-[r:CALLS]->(t) SET r.ambiguous = false
                 """, rows=rows, ns=self._ns)
             session.run("MATCH (c:Chunk {ns: $ns}) WHERE c.id IS NULL AND NOT (c)--() DELETE c",
@@ -417,7 +739,7 @@ class GraphStore:
             Include callees not defined in the indexed code (stubs).
         include_ambiguous:
             Also follow calls the resolver could not pin to one definition
-            (e.g. `obj.save()` with several `save` methods) — "possible" links.
+            (e.g. `obj.save()` with several `save` methods) -- "possible" links.
         """
         downstream = direction == "callees"
         if self.use_fallback:
@@ -482,12 +804,12 @@ class GraphStore:
             How many hops to traverse (S2). 1 = immediate calls only.
         include_external:
             Also return calls to things not defined in the indexed code
-            (builtins, libraries — `len`, `append`, `requests.get`). Off by
+            (builtins, libraries - len, append, requests.get). Off by
             default so they don't flood context and impact counts.
         """
         if self.use_fallback:
             assert self.nx_graph is not None
-            # O(1) name index lookup (was O(V) linear scan over ALL nodes)
+            # O(1) name index lookup with intelligent fallback
             nodes = self._find_nodes_by_name(chunk_name)
             deps: set[str] = set()
             visited: set[str] = set()
@@ -501,7 +823,8 @@ class GraphStore:
                     visited.add(n)
                     for successor in self.nx_graph.successors(n):
                         edge_data = self.nx_graph.get_edge_data(n, successor)
-                        if edge_data and edge_data.get("type") == EDGE_CALLS                                 and not edge_data.get("ambiguous"):
+                        if edge_data and edge_data.get("type") == EDGE_CALLS \
+                                and not edge_data.get("ambiguous"):
                             attrs = self.nx_graph.nodes[successor]
                             if attrs.get("type") == "stub" and not include_external:
                                 continue
@@ -542,7 +865,7 @@ class GraphStore:
         """
         if self.use_fallback:
             assert self.nx_graph is not None
-            # O(1) name index lookup (was O(V) linear scan over ALL nodes)
+            # O(1) name index lookup with intelligent fallback
             nodes = self._find_nodes_by_name(chunk_name)
             callers: set[str] = set()
             visited: set[str] = set()
@@ -556,7 +879,8 @@ class GraphStore:
                     visited.add(n)
                     for predecessor in self.nx_graph.predecessors(n):
                         edge_data = self.nx_graph.get_edge_data(predecessor, n)
-                        if edge_data and edge_data.get("type") == EDGE_CALLS                                 and not edge_data.get("ambiguous"):
+                        if edge_data and edge_data.get("type") == EDGE_CALLS \
+                                and not edge_data.get("ambiguous"):
                             name = self.nx_graph.nodes[predecessor].get("name", "")
                             if name:
                                 callers.add(name)
@@ -568,6 +892,7 @@ class GraphStore:
         if not self._driver:
             return []
 
+        # Neo4j: reverse variable-length path traversal
         query = f"""
         MATCH p = (caller)-[:CALLS*1..{depth}]->(callee:Chunk)
         WHERE callee.ns = $ns AND (callee.name = $name OR callee.qualified_name = $name)
@@ -593,9 +918,11 @@ class GraphStore:
         }
 
     def get_node_metadata(self, chunk_name: str) -> dict | None:
-        """Fetch metadata for a chunk by name."""
+        """Fetch metadata for a chunk by name, qualified_name, or node_id."""
         if self.use_fallback:
             assert self.nx_graph is not None
+            if chunk_name in self.nx_graph:
+                return dict(self.nx_graph.nodes[chunk_name])
             # O(1) name index lookup (was O(V) linear scan over ALL nodes)
             node_ids = self._find_nodes_by_name(chunk_name)
             for node_id in node_ids:
@@ -609,7 +936,7 @@ class GraphStore:
         query = """
         MATCH (c:Chunk)
         WHERE c.ns = $ns AND c.id IS NOT NULL
-              AND (c.name = $name OR c.qualified_name = $name)
+              AND (c.name = $name OR c.qualified_name = $name OR c.node_id = $name OR c.id = $name)
         RETURN c LIMIT 1
         """
         assert self._driver is not None
@@ -653,6 +980,8 @@ class GraphStore:
             assert self.nx_graph is not None
             self.nx_graph.clear()
             self._name_index = {}
+            self._token_index = {}
+            self._stem_index = {}
             self._save_to_disk()
             return
 
@@ -668,6 +997,64 @@ class GraphStore:
         """Persist the graph to disk (NetworkX fallback only)."""
         if self.use_fallback:
             self._save_to_disk()
+
+    def get_external_services(self, symbol: str | None = None) -> list[dict]:
+        """Return all external third-party services, APIs, and databases invoked.
+
+        If `symbol` is specified, returns only the external services called
+        downstream by that function. Otherwise, returns all external services
+        called across the repository.
+        """
+        if self.use_fallback:
+            assert self.nx_graph is not None
+            if symbol:
+                nodes = self._find_nodes_by_name(symbol)
+                stubs = [succ for n in nodes for succ in self.nx_graph.successors(n)
+                         if self.nx_graph.nodes[succ].get("type") == "stub"]
+            else:
+                stubs = [n for n, d in self.nx_graph.nodes(data=True) if d.get("type") == "stub"]
+
+            results = []
+            seen = set()
+            for s in stubs:
+                d = self.nx_graph.nodes[s]
+                name = d.get("name", "")
+                if name and name not in seen:
+                    seen.add(name)
+                    results.append({
+                        "symbol": name,
+                        "package": d.get("package", name.split("::")[0] if "::" in name else name),
+                        "category": d.get("category", "Third-Party Library"),
+                        "side_effect": d.get("side_effect", "External Code Execution"),
+                        "risk": d.get("risk", "low"),
+                        "confidence": d.get("confidence", 1.0),
+                    })
+            return sorted(results, key=lambda x: (x["category"], x["symbol"]))
+
+        if not self._driver:
+            return []
+        filter_clause = f"WHERE start.name = $name OR start.qualified_name = $name" if symbol else ""
+        query = f"""
+        MATCH (start:Chunk {{ns: $ns}})-[:CALLS*1..3]->(target:Chunk {{ns: $ns, external: true}})
+        {filter_clause}
+        RETURN DISTINCT target.name AS name, target.package AS package,
+               target.category AS category, target.side_effect AS side_effect,
+               target.risk AS risk, target.confidence AS confidence
+        """
+        with self._driver.session() as session:
+            rows = session.run(query, ns=self._ns, name=symbol or "")
+            results = []
+            for r in rows:
+                name = r["name"]
+                results.append({
+                    "symbol": name,
+                    "package": r["package"] or (name.split("::")[0] if "::" in name else name),
+                    "category": r["category"] or "Third-Party Library",
+                    "side_effect": r["side_effect"] or "External Code Execution",
+                    "risk": r["risk"] or "low",
+                    "confidence": r["confidence"] or 1.0,
+                })
+            return sorted(results, key=lambda x: (x["category"], x["symbol"]))
 
     def stats(self) -> dict:
         """Return graph statistics."""

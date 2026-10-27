@@ -272,7 +272,7 @@ def extract_field_types(definition: Node, source: bytes) -> dict[str, str]:
                     if not typ and right is not None and right.type == "identifier":
                         typ = ctor_params.get(_text(right, source), "")
                     put(_text(attr, source), typ or _constructed_type(right, source))
-        if t in ("function_definition", "method_definition"):
+        if t in ("function_definition", "method_definition", "constructor_declaration", "method_declaration"):
             # self.x = x inside __init__/constructor: use the parameter's annotation
             ctor_params = extract_var_types(n, source)
         for child in n.children:

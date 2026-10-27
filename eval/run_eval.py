@@ -210,14 +210,14 @@ def main():
 
     baseline = (json.loads(BASELINE.read_text(encoding="utf-8")).get("summary")
                 if BASELINE.exists() else None)
-    print(f"\nKitsune eval — {summary['questions']} questions, backend={args.backend}")
-    print(f"{'metric':26} {'value':>10} {'baseline':>10} {'Δ':>9}")
+    print(f"\nKitsune eval -- {summary['questions']} questions, backend={args.backend}")
+    print(f"{'metric':26} {'value':>10} {'baseline':>10} {'diff':>9}")
     for key, value in summary.items():
         if key == "questions":
             continue
         base = baseline.get(key) if baseline else None
         delta = f"{value - base:+.3f}" if isinstance(base, (int, float)) else ""
-        base_s = f"{base:.3f}" if isinstance(base, (int, float)) else "—"
+        base_s = f"{base:.3f}" if isinstance(base, (int, float)) else "--"
         print(f"{key:26} {value:10.3f} {base_s:>10} {delta:>9}")
 
     record = {"summary": summary, "backend": args.backend,

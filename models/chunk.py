@@ -97,6 +97,7 @@ class Chunk:
             "inherits": self.inherits,
             "chunk_type": self.chunk_type,
             "scope": self.scope,
+            "decorators": self.decorators,
         }
 
     def __post_init__(self):

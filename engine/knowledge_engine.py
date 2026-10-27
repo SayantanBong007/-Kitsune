@@ -290,6 +290,22 @@ class RepositoryKnowledgeEngine:
         from kitsune.graph.traversal import get_impact_analysis
         return get_impact_analysis(self.graph_store, function_name, max_depth)
 
+    def get_external_services(self, symbol: str | None = None) -> list[dict]:
+        """Return all external third-party services, APIs, and databases invoked."""
+        return self.graph_store.get_external_services(symbol)
+
+    def get_library_catalog(self) -> dict[str, dict]:
+        """External libraries this project calls, with inferred role and risk.
+
+        Rebuilt on every indexing pass (from manifests and observed calls).
+        """
+        return self.graph_store.catalog.get_catalog()
+
+    def export_library_catalog(self, output_path: str) -> str:
+        """Export this project's library catalog to a JSON file."""
+        return self.graph_store.catalog.export_catalog_json(output_path)
+
+
     # ── Maintenance ───────────────────────────────────────────────────────
 
     def clear_all(self):

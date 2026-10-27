@@ -1,7 +1,7 @@
 {
   "summary": {
     "questions": 44,
-    "retrieval_recall": 0.975,
+    "retrieval_recall": 0.95,
     "retrieval_top_hit": 0.9,
     "graph_precision": 1.0,
     "graph_recall": 1.0,
@@ -10,14 +10,14 @@
     "router_accuracy": 1.0,
     "concept_coverage": 1.0,
     "concept_precision": 0.7791666666666668,
-    "avg_context_chars": 4494.95,
-    "avg_retrieval_latency_s": 0.8130598425865173,
-    "index_seconds": 53.1802294254303,
+    "avg_context_chars": 4483.8,
+    "avg_retrieval_latency_s": 0.7910889625549317,
+    "index_seconds": 63.48422122001648,
     "index_errors": 0,
     "router_paraphrase_accuracy": 0.96875
   },
   "backend": "local",
-  "timestamp": "2026-10-22 22:32:54",
+  "timestamp": "2026-10-27 22:48:07",
   "repos": {
     "shop": {
       "rows": [
@@ -25,7 +25,7 @@
           "q": "How does checkout work?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 11.99618148803711,
+          "latency": 10.982238054275513,
           "recall": 1.0,
           "top_hit": true,
           "context_chars": 2894,
@@ -35,17 +35,17 @@
           "q": "How are receipts emailed to customers?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.09935665130615234,
+          "latency": 0.09067583084106445,
           "recall": 1.0,
           "top_hit": true,
-          "context_chars": 2060,
+          "context_chars": 2046,
           "missing": []
         },
         {
           "q": "Where are user passwords verified?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.10467791557312012,
+          "latency": 0.11237812042236328,
           "recall": 1.0,
           "top_hit": true,
           "context_chars": 1417,
@@ -55,7 +55,7 @@
           "q": "How is stock reserved for an order?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.12302374839782715,
+          "latency": 0.11502528190612793,
           "recall": 1.0,
           "top_hit": true,
           "context_chars": 2481,
@@ -65,7 +65,7 @@
           "q": "How does the Stripe charge request get sent?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.0895833969116211,
+          "latency": 0.08108329772949219,
           "recall": 1.0,
           "top_hit": true,
           "context_chars": 1257,
@@ -75,7 +75,7 @@
           "q": "Show me the Order model",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.020740509033203125,
+          "latency": 0.01781177520751953,
           "recall": 1.0,
           "top_hit": true,
           "context_chars": 400,
@@ -171,14 +171,14 @@
           "payment",
           "order",
           "user",
-          "db",
-          "api",
           "auth",
+          "api",
+          "db",
           "notification",
           "inventory"
         ]
       },
-      "index_seconds": 2.1572344303131104,
+      "index_seconds": 1.9789073467254639,
       "chunks": 41,
       "errors": []
     },
@@ -188,17 +188,17 @@
           "q": "How are notes loaded from the server?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.08306169509887695,
+          "latency": 0.08628249168395996,
           "recall": 1.0,
           "top_hit": true,
-          "context_chars": 1670,
+          "context_chars": 1536,
           "missing": []
         },
         {
           "q": "How does autosave work?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.09808635711669922,
+          "latency": 0.0837557315826416,
           "recall": 1.0,
           "top_hit": true,
           "context_chars": 1892,
@@ -208,7 +208,7 @@
           "q": "How are API requests authenticated?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.1553785800933838,
+          "latency": 0.10922384262084961,
           "recall": 1.0,
           "top_hit": true,
           "context_chars": 1576,
@@ -218,7 +218,7 @@
           "q": "How is the legacy widget mounted on the page?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.06021237373352051,
+          "latency": 0.05041909217834473,
           "recall": 1.0,
           "top_hit": true,
           "context_chars": 1139,
@@ -292,7 +292,7 @@
           "format"
         ]
       },
-      "index_seconds": 1.3324413299560547,
+      "index_seconds": 1.3522722721099854,
       "chunks": 26,
       "errors": []
     },
@@ -302,7 +302,7 @@
           "q": "How are transactions validated before being recorded?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.11530566215515137,
+          "latency": 0.11678171157836914,
           "recall": 1.0,
           "top_hit": true,
           "context_chars": 1518,
@@ -312,7 +312,7 @@
           "q": "How is an account balance computed?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.07005453109741211,
+          "latency": 0.06932234764099121,
           "recall": 1.0,
           "top_hit": true,
           "context_chars": 1122,
@@ -322,7 +322,7 @@
           "q": "How does the server start?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.062215566635131836,
+          "latency": 0.06250238418579102,
           "recall": 1.0,
           "top_hit": true,
           "context_chars": 883,
@@ -395,7 +395,7 @@
           "tx"
         ]
       },
-      "index_seconds": 1.105107069015503,
+      "index_seconds": 1.2097434997558594,
       "chunks": 25,
       "errors": []
     },
@@ -405,50 +405,52 @@
           "q": "How are deleted files removed during incremental indexing?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.4886658191680908,
+          "latency": 0.5300140380859375,
           "recall": 1.0,
           "top_hit": false,
-          "context_chars": 9897,
+          "context_chars": 9863,
           "missing": []
         },
         {
           "q": "How does the query cache decide that a paraphrased question is a hit?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.44048452377319336,
-          "recall": 1.0,
+          "latency": 0.5936336517333984,
+          "recall": 0.5,
           "top_hit": false,
-          "context_chars": 9844,
-          "missing": []
+          "context_chars": 9860,
+          "missing": [
+            "_identifiers"
+          ]
         },
         {
           "q": "How are calls resolved to the right definition?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.49514126777648926,
-          "recall": 1.0,
-          "top_hit": true,
-          "context_chars": 9995,
-          "missing": []
-        },
-        {
-          "q": "How is the context budget applied to retrieved chunks?",
-          "kind": "retrieval",
-          "route_ok": true,
-          "latency": 0.46047306060791016,
+          "latency": 0.7085142135620117,
           "recall": 1.0,
           "top_hit": true,
           "context_chars": 9939,
           "missing": []
         },
         {
+          "q": "How is the context budget applied to retrieved chunks?",
+          "kind": "retrieval",
+          "route_ok": true,
+          "latency": 0.644279956817627,
+          "recall": 1.0,
+          "top_hit": true,
+          "context_chars": 9937,
+          "missing": []
+        },
+        {
           "q": "How are list fields stored in ChromaDB metadata?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.3104245662689209,
+          "latency": 0.3620162010192871,
           "recall": 0.5,
           "top_hit": true,
-          "context_chars": 9952,
+          "context_chars": 9997,
           "missing": [
             "_decode_metadata"
           ]
@@ -457,17 +459,17 @@
           "q": "How does hybrid search combine semantic, keyword and graph results?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.5019092559814453,
+          "latency": 0.5052077770233154,
           "recall": 1.0,
           "top_hit": true,
-          "context_chars": 9986,
+          "context_chars": 9942,
           "missing": []
         },
         {
           "q": "How are JavaScript IIFEs chunked?",
           "kind": "retrieval",
           "route_ok": true,
-          "latency": 0.4862198829650879,
+          "latency": 0.5006134510040283,
           "recall": 1.0,
           "top_hit": true,
           "context_chars": 9977,
@@ -523,8 +525,8 @@
           "timer"
         ]
       },
-      "index_seconds": 48.58544659614563,
-      "chunks": 306,
+      "index_seconds": 58.94329810142517,
+      "chunks": 339,
       "errors": []
     }
   }

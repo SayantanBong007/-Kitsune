@@ -50,8 +50,42 @@ class KeywordStore:
             from rank_bm25 import BM25Okapi
             self._bm25_class = BM25Okapi
         except ImportError:
-            logger.warning("rank_bm25 not installed — keyword search disabled.")
-            self._bm25_class = None
+            import math
+            from collections import Counter
+
+            class _PureBM25:
+                def __init__(self, corpus: list[list[str]], k1: float = 1.5, b: float = 0.75):
+                    self.k1 = k1
+                    self.b = b
+                    self.corpus_size = len(corpus)
+                    self.doc_lens = [len(d) for d in corpus]
+                    self.avgdl = sum(self.doc_lens) / (self.corpus_size or 1)
+                    self.doc_freqs = []
+                    self.idf = {}
+                    df = Counter()
+                    for d in corpus:
+                        cnt = Counter(d)
+                        self.doc_freqs.append(cnt)
+                        for tok in cnt:
+                            df[tok] += 1
+                    for tok, freq in df.items():
+                        self.idf[tok] = math.log((self.corpus_size - freq + 0.5) / (freq + 0.5) + 1.0)
+
+                def get_scores(self, query: list[str]) -> list[float]:
+                    scores = [0.0] * self.corpus_size
+                    for tok in query:
+                        if tok not in self.idf:
+                            continue
+                        idf_val = self.idf[tok]
+                        for i, freqs in enumerate(self.doc_freqs):
+                            tf = freqs.get(tok, 0)
+                            if tf > 0:
+                                denom = tf + self.k1 * (1 - self.b + self.b * (self.doc_lens[i] / (self.avgdl or 1)))
+                                scores[i] += idf_val * (tf * (self.k1 + 1)) / (denom or 1)
+                    return scores
+
+            logger.info("rank_bm25 not installed — using built-in pure-Python BM25 fallback.")
+            self._bm25_class = _PureBM25
 
         self._load_from_disk()
 
@@ -65,6 +99,7 @@ class KeywordStore:
             with open(path, "rb") as f:
                 data = pickle.load(f)
             self._corpus = data.get("corpus", {})
+            self._rebuild_index()
             logger.info(f"Loaded BM25 index from disk: {len(self._corpus)} documents.")
         except Exception as e:
             logger.warning(f"Could not load BM25 index from disk: {e}")

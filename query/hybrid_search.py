@@ -34,6 +34,13 @@ from kitsune.store.vector_store import VectorStore
 logger = logging.getLogger(__name__)
 
 
+def _chunk_key(chunk: dict) -> tuple:
+    """Identity of a retrieved chunk, whichever store it came from."""
+    return (chunk.get("node_id") or chunk.get("id")
+            or (chunk.get("file_path"), chunk.get("qualified_name") or chunk.get("name"),
+                chunk.get("start_line")),)
+
+
 class SearchResult(TypedDict):
     primary_chunks: list[dict]
     dependency_chunks: list[dict]
@@ -156,10 +163,20 @@ class HybridSearcher:
                 logger.info(f"Keyword search: {len(keyword_chunks)} additional chunks")
 
             # ── Step 3: Graph traversal (multi-hop) ───────────────────────
-            if plan.use_graph and primary_chunks:
+            if plan.use_graph:
                 # "What calls X?" / "What breaks if X changes?" need the
                 # callers (upstream) too, not only what X calls.
                 include_callers = plan.query_type in ("dependency", "impact")
+                seed_chunks = list(primary_chunks)
+                if not seed_chunks:
+                    # Semantic search found nothing to start from: fall back to
+                    # fuzzy name/docstring matching against the graph itself.
+                    graph_seed_ids = self._graph.search_nodes(query, limit=plan.top_k)
+                    for sid in graph_seed_ids:
+                        meta = self._graph.get_node_metadata(sid)
+                        if meta and meta not in seed_chunks:
+                            seed_chunks.append(meta)
+
                 # Ordered by priority, because the context budget below drops
                 # from the end: callers first for caller/impact questions,
                 # and direct (1-hop) neighbours before transitive ones.
@@ -167,8 +184,9 @@ class HybridSearcher:
                 callers_far: list[str] = []
                 deps_near: list[str] = []
                 deps_far: list[str] = []
-                for chunk in primary_chunks:
+                for chunk in seed_chunks:
                     chunk_name = chunk.get("name") or chunk.get("qualified_name", "")
+
                     if chunk_name and chunk_name != "<module>":
                         near = self._graph.get_dependencies(chunk_name, depth=1)
                         deps = self._graph.get_dependencies(chunk_name, depth=plan.graph_depth)
@@ -211,9 +229,17 @@ class HybridSearcher:
                             f"{len(dependency_chunks)} dependency chunks")
 
             # ── Step 4: Cross-encoder reranking (S6) ──────────────────────
+            # Reranks the semantic matches only. Mixing keyword/dependency
+            # chunks into the reranked pool ("two-stage") was measured with
+            # eval/run_eval.py and lowered retrieval recall (0.95 -> 0.90)
+            # while adding ~0.3 s per query, so it is not used.
             if plan.use_reranker and primary_chunks:
                 primary_chunks = rerank(query, primary_chunks, top_k=effective_k)
-                logger.info(f"Reranked primary chunks")
+                logger.info("Reranked primary chunks")
+                # Never send the same chunk to the LLM twice
+                promoted = {_chunk_key(c) for c in primary_chunks}
+                keyword_chunks = [c for c in keyword_chunks if _chunk_key(c) not in promoted]
+                dependency_chunks = [c for c in dependency_chunks if _chunk_key(c) not in promoted]
 
             # ── Step 5: Context budget management ─────────────────────────
             # On large codebases, a hub function can pull in hundreds of

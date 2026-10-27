@@ -206,7 +206,7 @@ class Indexer:
             self._keyword.build()
 
             # Resolve every call site against the whole (updated) codebase
-            total_metrics.total_edges += self._link_calls()
+            total_metrics.total_edges += self._link_calls(dir_path)
 
             # Persist the graph to disk (S4)
             self._graph.save()
@@ -244,13 +244,19 @@ class Indexer:
             logger.error(f"Parse failed for {path}: {e}")
             return None
 
-    def _link_calls(self) -> int:
+    def _link_calls(self, repo_root: str | Path | None = None) -> int:
         """(Re)build all CALLS edges with the call resolver. Returns the edge count.
 
         Runs over the whole project, not just changed files: a new or renamed
         definition can change what calls in *unchanged* files resolve to.
+        The project's library catalog is rebuilt in the same pass (from the
+        repo's manifests, when `repo_root` is given, and the calls observed).
         """
-        resolution = CallResolver(self._graph.all_definitions()).resolve_all()
+        catalog = self._graph.catalog
+        catalog.clear()
+        if repo_root is not None:
+            catalog.scan_manifests(repo_root)
+        resolution = CallResolver(self._graph.all_definitions(), catalog=catalog).resolve_all()
         return self._graph.replace_call_edges(resolution.edges, resolution.externals)
 
     def _remove_file(self, file_path: str, keep_ids: set[str] | None = None):
@@ -290,29 +296,18 @@ class Indexer:
             for chunk in chunks:
                 self._keyword.upsert(chunk.node_id, chunk.text, chunk.to_metadata())
 
-            # K3: Build Dependency Graph
+            # K3: Build Dependency Graph (Batch UNWIND)
+            self._graph.upsert_chunk_nodes_batch(chunks)
+
             graph_edges = 0
             for chunk in chunks:
-                # Module chunks get a real node too (so their import edges
-                # carry a file_path and are cleaned up on re-index)
-                self._graph.upsert_chunk_node(chunk)
-
                 if chunk.name == "<module>":
                     for imp in chunk.imports:
                         self._graph.add_edge(chunk.node_id, imp, edge_type=EDGE_IMPORTS)
                         graph_edges += 1
-                    continue
-
-                # CALLS edges are added by _link_calls() once every file is
-                # stored, so a call can be resolved to the right definition.
-
-                for parent in chunk.inherits:
-                    self._graph.add_edge(chunk.node_id, parent, edge_type=EDGE_EXTENDS)
+                if chunk.scope and chunk.chunk_type in ("function", "method"):
                     graph_edges += 1
-
-                for decorator in chunk.decorators:
-                    self._graph.add_edge(chunk.node_id, decorator, edge_type=EDGE_DECORATED_BY)
-                    graph_edges += 1
+                graph_edges += len(chunk.inherits) + len(chunk.decorators)
 
             metrics.total_edges += graph_edges
             metrics.total_chunks += len(chunks)
