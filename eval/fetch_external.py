@@ -27,6 +27,7 @@ REPOS = [
     ("boutique", "https://github.com/GoogleCloudPlatform/microservices-demo.git", "38e7348"),
     ("petclinic-ms", "https://github.com/spring-petclinic/spring-petclinic-microservices.git", "e8b747a"),
     ("robot-shop", "https://github.com/instana/robot-shop.git", "55292e2"),
+    ("train-ticket", "https://github.com/FudanSELab/train-ticket.git", "313886e"),
 ]
 
 

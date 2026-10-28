@@ -20,6 +20,7 @@ MANIFESTS = (
 _SKIP_DIRS = {
     ".git", ".github", "node_modules", "vendor", "target", "build", "dist", "__pycache__",
     ".venv", "venv", ".idea", ".vscode", "test", "tests", "docs", "doc", "examples",
+    "old-docs", "documentation", "site-docs",
     # deployment/infrastructure folders (Prometheus/Grafana images, manifests), not services
     "docker", "deploy", "deployment", "deployments", "infra", "infrastructure", "k8s",
     "kubernetes", "helm", "helm-chart", "charts", "kustomize", "terraform", "scripts", "ops",

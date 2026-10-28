@@ -50,6 +50,13 @@ _GENERATED_MARK = re.compile(rb"^[ \t]*(//|#|/?\*|<!--|--)[^\n]{0,40}?(Code gene
 _ASSET_DIR = re.compile(r"(^|/)(public|static|assets|www|wwwroot)(/|$)|\.min\.js$|\.bundle\.js$")
 _TEST_DIR = re.compile(r"(^|/)(test|tests|__tests__|spec|testdata)(/|$)|_test\.go$|Test\w*\.java$|"
                        r"\.(test|spec)\.[jt]sx?$|(^|/)test_\w+\.py$")
+# Calls that send a request: their result is a response, not a URL
+_REQUEST_CALLS = {"exchange", "getForObject", "postForObject", "getForEntity", "postForEntity",
+                  "patchForObject", "execute", "retrieve", "urlopen", "newCall", "Do", "fetch"}
+# Nodes that open a function scope (for local variables)
+_FUNCTION_NODES = {"function_declaration", "function_definition", "method_declaration",
+                   "method_definition", "arrow_function", "function_expression", "function",
+                   "constructor_declaration", "lambda", "func_literal", "lambda_expression"}
 _STRING_TYPES = {"string", "string_literal", "interpreted_string_literal",
                  "raw_string_literal", "template_string"}
 _STRING_PARTS = {"string_fragment", "string_content", "escape_sequence",
@@ -85,7 +92,8 @@ _ENV_SUFFIX = r"(_SERVICE)?_(HOST|HOSTNAME|ADDR|ADDRESS|URL|URI|ENDPOINT|SVC|SER
 _NOT_HTTP = re.compile(r"^(log|print|debug|info|warn|warning|error|trace|fatal|assert\w*|expect|"
                        r"equal\w*|format\w*|str|string|append|add|push|set|contains|startsWith|"
                        r"endsWith|match\w*|test|includes|indexOf|split|encode\w*|decode\w*|"
-                       r"quote|unquote|Errorf|Printf|Println|Sprintf)$", re.I)
+                       r"quote|unquote|Errorf|Printf|Println|Sprintf|getResource\w*|"
+                       r"\w*TemplateLoading|load\w*|open|readFile\w*)$", re.I)
 _HTTP_CALL_NAMES = {"request", "fetch", "get", "post", "put", "delete", "patch", "head",
                     "uri", "url",
                     "getForObject", "postForObject", "getForEntity", "postForEntity", "exchange",
@@ -201,6 +209,8 @@ def parse_url(template: str, hosts: dict[str, str]) -> tuple[str, str, bool]:
             return "", "", False
     else:
         path = rest
+    if re.search(r"[()^$|\\]|\.\*|\[", path.replace("{*}", "")):
+        return "", "", False   # a regex route pattern ("/(.*)"), not a URL
     looks = bool(scheme or target or path.startswith("/"))
     return target, (normalize_path(path) if path else ""), looks
 
@@ -288,6 +298,7 @@ class ContractExtractor:
         self.http_clients = _HTTP_CALL_NAMES | set(hints.get("http_clients", ()))
         self.observations: list[tuple[str, str, str]] = []
         self.blind_spots: list[dict] = []
+        self._bindings: list[dict[str, str]] = []   # parameter values while evaluating a call
         self.files: dict[str, list[_File]] = {}
         self.constants: dict[str, dict[str, list[tuple[_File, object]]]] = {}
         self.protos: dict[str, list[str]] = {}       # "pkg.Service" → [rpc, ...]
@@ -494,8 +505,20 @@ class ContractExtractor:
                  "attribute", "property_identifier", "field_identifier"):
             name = _last_name(f.text(node))
             if t == "identifier":
+                if self._bindings and name in self._bindings[-1]:
+                    return self._bindings[-1][name]   # a parameter bound by _call_with_args
+                if name not in seen:
+                    # a local of this function: its own assignments, not a same-named
+                    # variable of another function in the file
+                    local_values = self._local_values(f, node, name)
+                    if local_values:
+                        values = [self.evaluate(service, f, v, depth + 1, seen | {name})
+                                  for v in local_values[-4:]]
+                        values.sort(key=lambda v: (v.count("{*}"), -len(v)))
+                        return values[0]
                 if self._is_parameter(f, node, name):
-                    return "{*}"     # a function parameter: its value comes from the caller
+                    # a parameter: its value comes from the callers in this file, if they agree
+                    return self._argument_value(service, f, node, name, depth, seen)
                 local = not _CONSTANT_NAME.match(name)
                 # plain locals (`id`, `custId`): variables from this file only
                 return self._lookup(service, name, depth, seen,
@@ -526,6 +549,112 @@ class ContractExtractor:
         # Prefer a value that actually carries information
         values.sort(key=lambda v: (v.count("{*}"), -len(v)))
         return values[0]
+
+    def _local_values(self, f: _File, node, name: str) -> list:
+        """Values assigned to local variable `name` inside the function that uses it
+        (before the use). Several values = branches: if (...) url = A; else url = B."""
+        fn = node.parent
+        while fn is not None and fn.type not in _FUNCTION_NODES:
+            fn = fn.parent
+        if fn is None:
+            return []
+        values = []
+        for a in _walk(fn):
+            if a.start_byte >= node.start_byte:
+                continue
+            if a.type == "variable_declarator" and f.text(a.child_by_field_name("name")) == name:
+                value = a.child_by_field_name("value")
+            elif a.type in ("assignment", "assignment_expression") \
+                    and f.text(a.child_by_field_name("left")) == name:
+                value = a.child_by_field_name("right")
+            elif a.type == "short_var_declaration":                       # Go: url := ...
+                left = [f.text(c) for c in a.child_by_field_name("left").named_children]
+                right = a.child_by_field_name("right").named_children
+                value = right[left.index(name)] if name in left and left.index(name) < len(right) else None
+            else:
+                continue
+            if value is not None:
+                values.append(value)
+        return values
+
+    def _alternatives(self, service: str, f: _File, node) -> list[str]:
+        """Every URL an argument can be: one per branch for a local assigned in
+        several places (travel vs travel2), else just its value."""
+        if node.type == "identifier":
+            name = f.text(node)
+            values = [self.evaluate(service, f, v, 1, {name}) for v in self._local_values(f, node, name)]
+            values = list(dict.fromkeys(v for v in values if v.replace("{*}", "")))
+            if len(values) > 1:
+                return values
+        return [self.evaluate(service, f, node)]
+
+    def _param_names(self, f: _File, fn) -> list[str]:
+        params = fn.child_by_field_name("parameters") if fn is not None else None
+        names = []
+        for p in (params.named_children if params is not None else []):
+            ident = p.child_by_field_name("name") or p.child_by_field_name("pattern") or p
+            names.append(f.text(ident).split("=")[0].split(":")[0].strip())
+        return [n for n in names if n not in ("self", "cls")]
+
+    def _call_with_args(self, service: str, f: _File, fname: str, args, depth: int, seen: set):
+        """Value of a call to a URL-building function of this service, with the call's
+        arguments bound to its parameters: getServiceUrl("order") with body
+        `return "http://" + serviceName` → "http://order". None if not such a function."""
+        if not fname or fname in seen or depth > 6:
+            return None
+        bodies = [(cf, ret) for cf, ret, kind in self.constants.get(service, {}).get(fname, ())
+                  if kind == "method"]
+        results = []
+        for cf, ret in bodies[:4]:
+            fn = ret.parent
+            while fn is not None and fn.type not in _FUNCTION_NODES:
+                fn = fn.parent
+            names = self._param_names(cf, fn)
+            if not names or len(names) != len(args):
+                continue
+            binding = {n: self.evaluate(service, f, a, depth + 1, seen) for n, a in zip(names, args)}
+            self._bindings.append(binding)
+            try:
+                results.append(self.evaluate(service, cf, ret, depth + 1, seen | {fname}))
+            finally:
+                self._bindings.pop()
+        if not results:
+            return None
+        results.sort(key=lambda v: (v.count("{*}"), -len(v)))
+        return results[0]
+
+    def _argument_value(self, service: str, f: _File, node, name: str, depth: int, seen: set) -> str:
+        """doPreserve(String url) called as doPreserve(serviceUrl, ...) in the same file:
+        the parameter takes the value passed in. Unknown if callers disagree or pass nothing."""
+        fn = node.parent
+        while fn is not None and fn.type not in _FUNCTION_NODES:
+            fn = fn.parent
+        fname = f.text(fn.child_by_field_name("name")) if fn is not None else ""
+        params = fn.child_by_field_name("parameters") if fn is not None else None
+        if not fname or params is None or name in seen:
+            return "{*}"
+        names = []
+        for p in params.named_children:
+            ident = p.child_by_field_name("name") or p.child_by_field_name("pattern") or p
+            names.append(f.text(ident).split("=")[0].split(":")[0].strip())
+        names = [n for n in names if n not in ("self", "cls")]
+        if name not in names:
+            return "{*}"
+        index = names.index(name)
+        values = set()
+        for call in _walk(f.root):
+            if call.type not in ("method_invocation", "call_expression", "call"):
+                continue
+            callee = call.child_by_field_name("name") or call.child_by_field_name("function")
+            if callee is None or _last_name(f.text(callee)) != fname:
+                continue
+            args = self._args(call)
+            if index < len(args):
+                values.add(self.evaluate(service, f, args[index], depth + 1, seen | {name}))
+            if len(values) > 1:
+                return "{*}"   # callers pass different values: only known at run time
+        value = values.pop() if values else "{*}"
+        return value if value.replace("{*}", "") else "{*}"
 
     def _is_parameter(self, f: _File, node, name: str) -> bool:
         """Is `name` a parameter of the function enclosing `node`?"""
@@ -588,6 +717,8 @@ class ContractExtractor:
             or node.child_by_field_name("constructor") or node.child_by_field_name("type")
         fname = _last_name(f.text(fn)) if fn is not None else ""
         args = self._args(node)
+        if fname in _REQUEST_CALLS:
+            return "{*}"   # re = restTemplate.exchange(url, ...): a response, never a URL
         if fname in ("getenv", "Getenv", "getProperty", "get", "getOrDefault", "env", "LookupEnv") \
                 and args and re.search(r"(env|environ|System|process|config|getenv)", f.text(fn) or "", re.I):
             # getenv("CART_ENDPOINT", "cart") → the default; getenv("CART_HOST") → by name
@@ -629,6 +760,9 @@ class ContractExtractor:
             # service), the receiver's value (new ServiceUri("payment", "/x").toUri()),
             # or the arguments (discoveryClient.getInstances("customers-service")) —
             # whichever carries the most concrete text.
+            bound = self._call_with_args(service, f, fname, args, depth, seen)
+            if bound is not None and bound.replace("{*}", ""):
+                return bound   # getServiceUrl("order") → "http://" + serviceName with serviceName = "order"
             options = [self._lookup(service, fname, depth, seen)]
             obj = node.child_by_field_name("object")
             if obj is not None:
@@ -645,6 +779,9 @@ class ContractExtractor:
             return best if best.replace("{*}", "") else "{*}"
         if fname and fname not in ("URI", "create", "URL", "join", "resolve", "toString",
                                    "Sprintf", "format") and node.type in ("call_expression", "call"):
+            bound = self._call_with_args(service, f, fname, args, depth, seen)
+            if bound is not None and bound.replace("{*}", ""):
+                return bound
             known = self._lookup(service, fname, depth, seen)
             if known != "{*}":
                 return known
@@ -680,6 +817,13 @@ class ContractExtractor:
             if any(p in _SKIP_DIRS or p in ("test",) for p in cfg.relative_to(root).parts):
                 continue
             text = cfg.read_text(encoding="utf-8", errors="ignore")
+            if not re.search(r"gateway|zuul", text, re.I):
+                continue   # a URL property in plain app config is not a call; only route tables are
+            # Spring placeholders: lb://${CART_HOST:ts-cart-service} → the default
+            # (or the service the variable names), as Spring would resolve it
+            text = re.sub(r"\$\{([\w.-]+)(?::([^}]*))?\}",
+                          lambda m: m.group(2) if m.group(2) is not None
+                          else self._env_host(m.group(1).upper().replace(".", "_"), service), text)
             for m in re.finditer(r"(?:uri|url)\s*[:=]\s*(?:lb|https?)://([\w.-]+)", text):
                 target = self.hosts.get(m.group(1).lower().split(".")[0], "")
                 if target and target != service:
@@ -861,7 +1005,8 @@ class ContractExtractor:
             for name, args in self._annotations(f, cls):
                 if name == "RequestMapping":
                     vals = self._ann_values(service, f, args.get("value") or args.get("path"))
-                    prefixes = [v for v in vals if v.startswith("/")] or [""]
+                    # Spring accepts "api/v1/x" as well as "/api/v1/x"
+                    prefixes = ["/" + v.lstrip("/") for v in vals if v.replace("{*}", "").strip("/")] or [""]
             body = cls.child_by_field_name("body")
             for m in (body.named_children if body is not None else []):
                 if m.type != "method_declaration":
@@ -951,6 +1096,13 @@ class ContractExtractor:
         candidates = []   # (template, method)
         method = self._verb_from_chain(fname, rtext) if fname in ("uri", "url") \
             else self._verb_from_name(fname)
+        if method not in HTTP_VERBS:
+            # the verb as an argument: restTemplate.exchange(url, HttpMethod.POST, ...),
+            # http.NewRequest(http.MethodPost, url, ...)
+            verb = re.search(r"\b(?:HttpMethod\.|http\.Method)(GET|POST|PUT|DELETE|PATCH|Get|Post|Put|"
+                             r"Delete|Patch)\b", " ".join(f.text(a) for a in args))
+            if verb:
+                method = verb.group(1).upper()
         for a in args:
             if a.type == "object":                         # request({uri: ..., method: 'POST'})
                 props = {f.text(p.child_by_field_name("key")).strip("'\"`"): p.child_by_field_name("value")
@@ -958,7 +1110,7 @@ class ContractExtractor:
                 url_node = props.get("uri") or props.get("url")
                 if url_node is not None:
                     m = self.evaluate(service, f, props["method"]).upper() if "method" in props else "GET"
-                    candidates.append((self.evaluate(service, f, url_node), m))
+                    candidates.append(([self.evaluate(service, f, url_node)], m))
             elif a.type == "identifier" and f.ext in (".js", ".ts", ".jsx", ".tsx"):
                 obj = self._local_object(f, n, f.text(a))   # var options = {uri:...}; request(options)
                 if obj is not None:
@@ -967,12 +1119,23 @@ class ContractExtractor:
                     url_node = props.get("uri") or props.get("url")
                     if url_node is not None:
                         m = self.evaluate(service, f, props["method"]).upper() if "method" in props else "GET"
-                        candidates.append((self.evaluate(service, f, url_node), m))
+                        candidates.append(([self.evaluate(service, f, url_node)], m))
                         continue
-                candidates.append((self.evaluate(service, f, a), method))
+                candidates.append((self._alternatives(service, f, a), method))
+            elif a.type == "keyword_argument":            # Python Request(url=url, ...)
+                value = a.child_by_field_name("value")
+                if value is not None and f.text(a.child_by_field_name("name")) in ("url", "uri", "endpoint"):
+                    candidates.append((self._alternatives(service, f, value), method))
             elif a.type not in ("arrow_function", "function_expression", "function", "lambda"):
-                candidates.append((self.evaluate(service, f, a), method))
-        for template, m in candidates:
+                candidates.append((self._alternatives(service, f, a), method))
+        for templates, m in candidates:
+            if self._http_templates(service, f, fname, rtext, line, templates, m, out):
+                break   # one argument is the URL; the others are not
+
+    def _http_templates(self, service, f, fname, rtext, line, templates, m, out) -> bool:
+        """Record a call for each URL the argument can be. True if any was recorded."""
+        found = False
+        for template in templates:
             target, path, looks = parse_url(template, self.hosts)
             if not looks:
                 continue
@@ -993,15 +1156,17 @@ class ContractExtractor:
                             "what": f"{fname}({template})",
                             "why": "URL with an unknown host passed to a function not known as an HTTP client"})
                     continue
+            elif fname not in self.http_clients and path in ("", "/"):
+                continue   # doPreserve(baseUrl, ...): a base URL handed to a helper, not a request
             elif fname not in self.http_clients and fname not in _URL_BUILDERS \
                     and not _NOT_HTTP.match(fname) and path:
                 # A URL of a known service handed to an unfamiliar function: maybe
                 # this team's own HTTP helper (callService(url)). Remember it.
                 self.observations.append(("http_client", fname, service))
-            if m not in HTTP_VERBS:
-                m = "GET" if fname == "request" else "ANY"
-            self._add_call(out, service, f, line, "http", m, path, target, template)
-            break
+            verb = m if m in HTTP_VERBS else ("GET" if fname == "request" else "ANY")
+            self._add_call(out, service, f, line, "http", verb, path, target, template)
+            found = True
+        return found
 
     def _verb_from_chain(self, fname: str, rtext: str) -> str:
         """Verb of a fluent request: client.get().uri(...) / .method(HttpMethod.POST)."""

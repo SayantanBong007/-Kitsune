@@ -138,7 +138,8 @@ def link_contracts(contracts: ServiceContracts, services: list[str]) -> list[Lin
                 else:
                     add(call, None, call.target, "possible",
                         "HTTP call to this service; no matching route found", path=call.path)
-            elif not call.target and call.path:
+            elif not call.target and call.path.replace("{*}", "").strip("/"):
+                # host unknown: only a path with real words in it can identify a service
                 matches = []
                 for svc, offers in offers_by_service.items():
                     if svc == call.service:

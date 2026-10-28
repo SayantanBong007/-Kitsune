@@ -283,7 +283,7 @@ flowchart LR
 Every number below was measured. The correct answers were written by hand from the source
 code before Kitsune was run.
 
-### Many services: four public systems
+### Many services: five public systems
 
 | System | Shape | Links: precision / recall | First run, before any fixes |
 |---|---|---|---|
@@ -291,9 +291,10 @@ code before Kitsune was run.
 | Online Boutique | 12 services · 5 languages · gRPC | **100% / 100%** | 100% |
 | Spring PetClinic Microservices | 8 services · Spring Cloud gateway | **100% / 100%** | 0%, kept unseen |
 | Robot Shop | 12 services · 5 languages · HTTP + AMQP + nginx | **100% / 100%** | 17%, kept unseen |
+| **Train Ticket** ([report](TRAIN_TICKET_REPORT.md)) | 47 services · Spring RestTemplate + RabbitMQ + gateway | **100% / 100%** | 62%, kept unseen (80% precision) |
 
 - **No wrong links:** 0 links to services that must not be connected.
-- **Impact questions:** "who is affected if X changes" is right in all four systems.
+- **Impact questions:** "who is affected if X changes" is right in all five systems.
 - **Production setup:** results are the same on the Qdrant + Neo4j servers.
 
 > **How to read this:** the *first-run* column is the honest expectation for a brand-new
@@ -369,6 +370,7 @@ python kitsune/eval/run_system_eval.py -v    # many services
 ```
 
 **Further reading:**
+- [TRAIN_TICKET_REPORT.md](TRAIN_TICKET_REPORT.md): blind test on the Train Ticket benchmark (47 services).
 - [ARCHITECT_QA.md](ARCHITECT_QA.md): how Kitsune handles dependency injection, annotations, external libraries and multi-repo.
 - [KITSUNE_ARCHITECTURE.md](KITSUNE_ARCHITECTURE.md): deep technical detail.
 - [MULTI_SERVICE_DESIGN.md](MULTI_SERVICE_DESIGN.md): the multi-service design.

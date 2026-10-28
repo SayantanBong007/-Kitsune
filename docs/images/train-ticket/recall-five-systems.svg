@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420" role="img" aria-label="Link recall on five public microservice systems"><title>Link recall on five public microservice systems</title>
+<rect width="900" height="420" fill="#fcfcfb"/>
+<text x="24.0" y="30.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="600">Link recall on five public microservice systems</text>
+<text x="24.0" y="52.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="start" font-weight="normal">Precision is 100% on every system in the final run; no forbidden links in first or final runs</text>
+<rect x="24" y="70" width="12" height="12" rx="3" fill="#2a78d6"/>
+<text x="42.0" y="81.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="start" font-weight="normal">First run (blind for PetClinic, Robot Shop, Train Ticket)</text>
+<rect x="475.8" y="70" width="12" height="12" rx="3" fill="#eb6834"/>
+<text x="493.8" y="81.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="start" font-weight="normal">Final</text>
+<line x1="64" y1="356.0" x2="876" y2="356.0" stroke="#c3c2b7" stroke-width="1"/>
+<text x="56.0" y="360.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11" fill="#898781" text-anchor="end" font-weight="normal">0%</text>
+<line x1="64" y1="295.0" x2="876" y2="295.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="56.0" y="299.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11" fill="#898781" text-anchor="end" font-weight="normal">25%</text>
+<line x1="64" y1="234.0" x2="876" y2="234.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="56.0" y="238.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11" fill="#898781" text-anchor="end" font-weight="normal">50%</text>
+<line x1="64" y1="173.0" x2="876" y2="173.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="56.0" y="177.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11" fill="#898781" text-anchor="end" font-weight="normal">75%</text>
+<line x1="64" y1="112.0" x2="876" y2="112.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="56.0" y="116.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11" fill="#898781" text-anchor="end" font-weight="normal">100%</text>
+<path d="M95.5,356.0 V206.3 Q95.5,202.3 99.5,202.3 H140.2 Q144.2,202.3 144.2,206.3 V356.0 Z" fill="#2a78d6"/>
+<text x="119.8" y="195.3" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">63%</text>
+<path d="M146.2,356.0 V116.0 Q146.2,112.0 150.2,112.0 H190.9 Q194.9,112.0 194.9,116.0 V356.0 Z" fill="#eb6834"/>
+<text x="170.6" y="105.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">100%</text>
+<text x="145.2" y="378.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="middle" font-weight="normal">Sock Shop</text>
+<path d="M257.9,356.0 V116.0 Q257.9,112.0 261.9,112.0 H302.6 Q306.6,112.0 306.6,116.0 V356.0 Z" fill="#2a78d6"/>
+<text x="282.2" y="105.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">100%</text>
+<path d="M308.6,356.0 V116.0 Q308.6,112.0 312.6,112.0 H353.3 Q357.3,112.0 357.3,116.0 V356.0 Z" fill="#eb6834"/>
+<text x="333.0" y="105.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">100%</text>
+<text x="307.6" y="378.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="middle" font-weight="normal">Online Boutique</text>
+<line x1="420.3" y1="356.0" x2="469.0" y2="356.0" stroke="#2a78d6" stroke-width="2"/>
+<text x="444.6" y="349.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">0%</text>
+<path d="M471.0,356.0 V116.0 Q471.0,112.0 475.0,112.0 H515.7 Q519.7,112.0 519.7,116.0 V356.0 Z" fill="#eb6834"/>
+<text x="495.4" y="105.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">100%</text>
+<text x="470.0" y="378.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="middle" font-weight="normal">PetClinic MS</text>
+<path d="M582.7,356.0 V318.5 Q582.7,314.5 586.7,314.5 H627.4 Q631.4,314.5 631.4,318.5 V356.0 Z" fill="#2a78d6"/>
+<text x="607.0" y="307.5" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">17%</text>
+<path d="M633.4,356.0 V116.0 Q633.4,112.0 637.4,112.0 H678.1 Q682.1,112.0 682.1,116.0 V356.0 Z" fill="#eb6834"/>
+<text x="657.8" y="105.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">100%</text>
+<text x="632.4" y="378.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="middle" font-weight="normal">Robot Shop</text>
+<path d="M745.1,356.0 V208.5 Q745.1,204.5 749.1,204.5 H789.8 Q793.8,204.5 793.8,208.5 V356.0 Z" fill="#2a78d6"/>
+<text x="769.4" y="197.5" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">62.1%</text>
+<path d="M795.8,356.0 V116.0 Q795.8,112.0 799.8,112.0 H840.5 Q844.5,112.0 844.5,116.0 V356.0 Z" fill="#eb6834"/>
+<text x="820.2" y="105.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">100%</text>
+<text x="794.8" y="378.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="middle" font-weight="normal">Train Ticket</text>
+</svg>

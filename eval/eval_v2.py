@@ -34,8 +34,10 @@ K = 10
 RRF_K = 60
 CE_TOP = 14
 CE_MODELS = {
-    "L-6": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    "L-6": "cross-encoder/ms-marco-MiniLM-L-6-v2",      # Kitsune's default reranker
     "L-12": "cross-encoder/ms-marco-MiniLM-L-12-v2",
+    "bge-base": "BAAI/bge-reranker-base",
+    "mxbai-xs": "mixedbread-ai/mxbai-rerank-xsmall-v1",
 }
 
 
@@ -146,7 +148,10 @@ def main():
         return re + pool[CE_TOP:]
 
     names = ["T1 vector", "T2 graph", "T3 bm25", "T1+T3", "T1+T2", "All3 concat",
-             "All3 RRF", "All3 concat+CE L-6", "All3 concat+CE L-12", "All3 RRF+CE L-6"]
+             "All3 RRF", "All3 concat+CE L-6", "All3 concat+CE L-12", "All3 RRF+CE L-6",
+             "All3 concat+CE bge-base", "All3 concat+CE mxbai-xs",
+             "T1+CE L-6", "T1+CE L-12", "T1+CE bge-base", "T1+CE mxbai-xs",
+             "Kitsune pipeline"]
     rows = {n: {"ranks": [], "lat": [], "pool": []} for n in names}
 
     for item in questions:
@@ -186,6 +191,20 @@ def main():
         c0 = time.perf_counter()
         res = ce_rerank(q, fused, "L-6")
         out["All3 RRF+CE L-6"] = (res, l_rrf + time.perf_counter() - c0)
+        for m in ("bge-base", "mxbai-xs"):
+            c0 = time.perf_counter()
+            res = ce_rerank(q, concat, m)
+            out[f"All3 concat+CE {m}"] = (res, lat_all + time.perf_counter() - c0)
+        for m in CE_MODELS:                       # does reranking help the strongest tail?
+            c0 = time.perf_counter()
+            res = ce_rerank(q, dedupe(t1), m)
+            out[f"T1+CE {m}"] = (res, l1 + time.perf_counter() - c0)
+        # What Kitsune actually returns (router + hybrid search + budget), in order
+        engine.cache.clear()
+        c0 = time.perf_counter()
+        sr = engine.search(q)
+        out["Kitsune pipeline"] = (dedupe(sr["primary_chunks"] + sr["dependency_chunks"]
+                                          + sr["keyword_chunks"]), time.perf_counter() - c0)
 
         for n, (pool, lat) in out.items():
             rank = next((i + 1 for i, c in enumerate(pool) if matches(c, item)), None)
@@ -212,6 +231,26 @@ def main():
                      f"{fa:>2}/{N}     | {lat:6.0f} | {pool:4.1f}")
         summary[n] = {"hit1": h1, "hit5": h5, "found_any": fa, "mrr10": mrr, "lat_ms": lat,
                       "pool": pool, "ranks": ranks}
+    if "--answers" in sys.argv:
+        # End to end: does the LLM's final answer name the right code element?
+        import re as _re
+        correct, answers = 0, []
+        for item in questions:
+            engine.cache.clear()
+            t0 = time.perf_counter()
+            try:
+                answer = engine.ask(item["q"])
+            except Exception as e:                     # LLM unreachable: count as wrong
+                answer = f"ERROR: {e}"
+            names = {item["expect"][1]} | {a[1] for a in item["alts"]}
+            ok = any(_re.search(rf"\b{_re.escape(n)}\b", answer) for n in names)
+            correct += ok
+            answers.append({"q": item["q"], "expect": sorted(names), "correct": ok,
+                            "seconds": round(time.perf_counter() - t0, 2), "answer": answer[:600]})
+        c = wilson(correct, N)
+        lines += ["", f"Answer accuracy (LLM answer names the expected symbol): {correct}/{N} "
+                      f"{correct / N * 100:.1f}% [{c[0]*100:.0f}-{c[1]*100:.0f}]"]
+        summary["_answers"] = {"correct": correct, "n": N, "items": answers}
     text = "\n".join(lines)
     print(text)
     out_path = BASE / "data" / ns / "eval_v2_results.json"

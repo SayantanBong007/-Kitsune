@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420" role="img" aria-label="Train Ticket: accuracy before and after"><title>Train Ticket: accuracy before and after</title>
+<rect width="900" height="420" fill="#fcfcfb"/>
+<text x="24.0" y="30.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="600">Train Ticket: accuracy before and after</text>
+<text x="24.0" y="52.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="start" font-weight="normal">47 services · answer key written independently before Kitsune ran · 0 wrong links in both runs</text>
+<rect x="24" y="70" width="12" height="12" rx="3" fill="#2a78d6"/>
+<text x="42.0" y="81.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="start" font-weight="normal">Blind first run</text>
+<rect x="165.0" y="70" width="12" height="12" rx="3" fill="#eb6834"/>
+<text x="183.0" y="81.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="start" font-weight="normal">After fixes</text>
+<line x1="64" y1="356.0" x2="876" y2="356.0" stroke="#c3c2b7" stroke-width="1"/>
+<text x="56.0" y="360.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11" fill="#898781" text-anchor="end" font-weight="normal">0%</text>
+<line x1="64" y1="295.0" x2="876" y2="295.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="56.0" y="299.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11" fill="#898781" text-anchor="end" font-weight="normal">25%</text>
+<line x1="64" y1="234.0" x2="876" y2="234.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="56.0" y="238.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11" fill="#898781" text-anchor="end" font-weight="normal">50%</text>
+<line x1="64" y1="173.0" x2="876" y2="173.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="56.0" y="177.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11" fill="#898781" text-anchor="end" font-weight="normal">75%</text>
+<line x1="64" y1="112.0" x2="876" y2="112.0" stroke="#e1e0d9" stroke-width="1"/>
+<text x="56.0" y="116.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11" fill="#898781" text-anchor="end" font-weight="normal">100%</text>
+<path d="M108.5,356.0 V165.3 Q108.5,161.3 112.5,161.3 H160.5 Q164.5,161.3 164.5,165.3 V356.0 Z" fill="#2a78d6"/>
+<text x="136.5" y="154.3" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">79.8%</text>
+<path d="M166.5,356.0 V116.0 Q166.5,112.0 170.5,112.0 H218.5 Q222.5,112.0 222.5,116.0 V356.0 Z" fill="#eb6834"/>
+<text x="194.5" y="105.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">100%</text>
+<text x="165.5" y="378.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="middle" font-weight="normal">Link precision</text>
+<path d="M311.5,356.0 V208.5 Q311.5,204.5 315.5,204.5 H363.5 Q367.5,204.5 367.5,208.5 V356.0 Z" fill="#2a78d6"/>
+<text x="339.5" y="197.5" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">62.1%</text>
+<path d="M369.5,356.0 V116.0 Q369.5,112.0 373.5,112.0 H421.5 Q425.5,112.0 425.5,116.0 V356.0 Z" fill="#eb6834"/>
+<text x="397.5" y="105.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">100%</text>
+<text x="368.5" y="378.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="middle" font-weight="normal">Link recall</text>
+<path d="M514.5,356.0 V194.3 Q514.5,190.3 518.5,190.3 H566.5 Q570.5,190.3 570.5,194.3 V356.0 Z" fill="#2a78d6"/>
+<text x="542.5" y="183.3" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">67.9%</text>
+<path d="M572.5,356.0 V116.0 Q572.5,112.0 576.5,112.0 H624.5 Q628.5,112.0 628.5,116.0 V356.0 Z" fill="#eb6834"/>
+<text x="600.5" y="105.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">100%</text>
+<text x="571.5" y="378.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="middle" font-weight="normal">Service edges found</text>
+<line x1="717.5" y1="356.0" x2="773.5" y2="356.0" stroke="#2a78d6" stroke-width="2"/>
+<text x="745.5" y="349.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">0%</text>
+<path d="M775.5,356.0 V116.0 Q775.5,112.0 779.5,112.0 H827.5 Q831.5,112.0 831.5,116.0 V356.0 Z" fill="#eb6834"/>
+<text x="803.5" y="105.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#0b0b0b" text-anchor="middle" font-weight="normal">100%</text>
+<text x="774.5" y="378.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="middle" font-weight="normal">Impact questions</text>
+</svg>

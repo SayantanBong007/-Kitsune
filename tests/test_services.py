@@ -145,6 +145,100 @@ def test_env_default_and_no_link_to_unknown_host(tmp_path):
     assert len(links) == 1                     # the github.com call links nowhere
 
 
+def _train_ticket_style(tmp_path) -> Path:
+    """RestTemplate.exchange with HttpMethod, getServiceUrl helpers, if/else targets,
+    a base URL passed as a parameter, a class prefix without "/", a gateway with
+    Spring placeholders, and an unused URL property in plain config."""
+    java = "src/main/java"
+    for name in ("order", "order-other", "travel", "travel2", "preserve", "gateway"):
+        _write(tmp_path / name / "pom.xml", f"<project><artifactId>{name}</artifactId></project>")
+    _write(tmp_path / "order" / java / "OrderController.java", """
+        @RestController
+        @RequestMapping("api/v1/orderservice")
+        public class OrderController {
+            @PostMapping("/order") public Response create() { return null; }
+            @GetMapping("/order/{id}") public Response get(@PathVariable String id) { return null; }
+            @DeleteMapping("/order/{id}") public Response delete(@PathVariable String id) { return null; }
+        }
+    """)
+    _write(tmp_path / "order-other" / java / "OtherController.java", """
+        @RestController
+        @RequestMapping("/api/v1/orderOtherService")
+        public class OtherController {
+            @PostMapping("/orderOther") public Response create() { return null; }
+        }
+    """)
+    for name, svc in (("travel", "travelservice"), ("travel2", "travel2service")):
+        _write(tmp_path / name / java / "TripController.java", f"""
+            @RestController
+            @RequestMapping("/api/v1/{svc}")
+            public class TripController {{
+                @PostMapping("/trip_detail") public Response detail() {{ return null; }}
+            }}
+        """)
+    _write(tmp_path / "travel" / "src/main/resources/application.yml",
+           "order:\n  url: http://${ORDER_HOST:order}/api/v1/orderservice/order\n")
+    _write(tmp_path / "preserve" / java / "PreserveService.java", """
+        public class PreserveService {
+            private String getServiceUrl(String serviceName) { return "http://" + serviceName; }
+
+            public void preserve(String tripId, String id) {
+                String order_url = getServiceUrl("order");
+                ResponseEntity<Response> re = restTemplate.exchange(
+                        order_url + "/api/v1/orderservice/order", HttpMethod.POST, entity, Response.class);
+                Response body = re.getBody();
+                restTemplate.exchange(order_url + "/api/v1/orderservice/order/" + id,
+                        HttpMethod.DELETE, entity, Response.class);
+                String requestUrl = "";
+                if (tripId.startsWith("G")) {
+                    requestUrl = getServiceUrl("travel") + "/api/v1/travelservice/trip_detail";
+                } else {
+                    requestUrl = getServiceUrl("travel2") + "/api/v1/travel2service/trip_detail";
+                }
+                restTemplate.exchange(requestUrl, HttpMethod.POST, entity, Response.class);
+                doOther(getServiceUrl("order-other"), entity);
+            }
+
+            private Response doOther(String url, HttpEntity e) {
+                return restTemplate.exchange(url + "/api/v1/orderOtherService/orderOther",
+                        HttpMethod.POST, e, Response.class).getBody();
+            }
+        }
+    """)
+    _write(tmp_path / "gateway" / "src/main/resources/application.yml", """
+        spring:
+          cloud:
+            gateway:
+              routes:
+                - id: order
+                  uri: lb://${ORDER_SERVICE_HOST:order}
+                  predicates:
+                    - Path=/api/v1/orderservice/**
+    """)
+    _write(tmp_path / "gateway" / java / "Main.java", """
+        public class Main { static final String ROUTE = "/(.*)"; void f() { http.Get(ROUTE); } }
+    """)
+    return tmp_path
+
+
+def test_spring_rest_template_patterns(tmp_path):
+    links = _links(_train_ticket_style(tmp_path))
+    confirmed = {(c, s, m, p) for c, s, _, m, p, conf in links if conf == "confirmed"}
+    assert ("preserve", "order", "POST", "/api/v1/orderservice/order") in confirmed       # HttpMethod.POST
+    assert ("preserve", "order", "DELETE", "/api/v1/orderservice/order/{*}") in confirmed  # prefix w/o "/"
+    assert ("preserve", "travel", "POST", "/api/v1/travelservice/trip_detail") in confirmed    # if branch
+    assert ("preserve", "travel2", "POST", "/api/v1/travel2service/trip_detail") in confirmed  # else branch
+    assert ("preserve", "order-other", "POST", "/api/v1/orderOtherService/orderOther") in confirmed  # parameter
+    assert not any(c == "preserve" and m == "GET" for c, _, m, _ in confirmed)   # re.getBody() is no call
+
+
+def test_gateway_routes_but_not_plain_url_properties(tmp_path):
+    links = _links(_train_ticket_style(tmp_path))
+    assert any(c == "gateway" and s == "order" for c, s, *_ in links)       # lb://${..:order}
+    assert not any(c == "travel" and s == "order" for c, s, *_ in links)    # order.url is just a property
+    assert not any(c == "gateway" and p == "/{*}" for c, _, _, _, p, _ in links)  # "/(.*)" is a regex
+
+
 # ── generated code ────────────────────────────────────────────────────────────
 
 def test_generated_marker_only_counts_in_comments(tmp_path):
