@@ -97,3 +97,62 @@ def test_dependency_injection_resolution():
     )
 
     assert expected_edge in resolution.edges, f"Expected {expected_edge} in {resolution.edges}"
+
+
+def _definitions(paths):
+    from kitsune.parser.chunker import chunk_file
+    return [{"node_id": c.node_id, "name": c.name, "qualified_name": c.qualified_name,
+             "file_path": c.file_path, "chunk_type": c.chunk_type, "language": c.language,
+             "resolve": c.resolve_info()}
+            for p in paths for c in chunk_file(p)]
+
+
+def test_dependency_injection_from_real_java_source(tmp_path):
+    """Annotations parsed from Java source (they sit in the class's `modifiers`; a bare
+    @Service is a marker_annotation) must reach the resolver: the interface call goes
+    to the @Service implementation."""
+    (tmp_path / "OrderService.java").write_text(
+        "public interface OrderService { Response create(Order o); }\n", encoding="utf-8")
+    (tmp_path / "OrderServiceImpl.java").write_text(
+        "@Service\npublic class OrderServiceImpl implements OrderService {\n"
+        "    public Response create(Order o) { return null; }\n}\n", encoding="utf-8")
+    (tmp_path / "OrderController.java").write_text(
+        "@RestController\npublic class OrderController {\n"
+        "    @Autowired private OrderService orderService;\n"
+        "    @PostMapping(\"/order\")\n"
+        "    public Response createNewOrder(Order o) { return orderService.create(o); }\n}\n",
+        encoding="utf-8")
+    defs = _definitions(sorted(tmp_path.glob("*.java")))
+    decorators = {d["qualified_name"]: d["resolve"]["decorators"] for d in defs}
+    assert decorators["OrderServiceImpl"] == ["Service"]
+    assert decorators["OrderController.createNewOrder"] == ["PostMapping"]
+    names = {d["node_id"]: d["qualified_name"] for d in defs}
+    src = next(d["node_id"] for d in defs if d["qualified_name"] == "OrderController.createNewOrder")
+    targets = [names[t] for s, t, _ in CallResolver(defs).resolve_all().edges if s == src]
+    assert targets == ["OrderServiceImpl.create"]
+
+
+def test_field_with_a_generic_name_uses_its_declared_type(tmp_path):
+    """`service.getTrip()` in Java is this.service: the field's type decides, even when
+    the name says nothing about the class (unlike orderService ≈ OrderService)."""
+    (tmp_path / "TravelService.java").write_text(
+        "public interface TravelService { Trip getTrip(String id); }\n", encoding="utf-8")
+    (tmp_path / "TravelServiceImpl.java").write_text(
+        "@Service\npublic class TravelServiceImpl implements TravelService {\n"
+        "    public Trip getTrip(String id) { return null; }\n}\n", encoding="utf-8")
+    (tmp_path / "TravelController.java").write_text(
+        "@RestController\npublic class TravelController {\n"
+        "    @Autowired private TravelService service;\n"
+        "    public Trip getTrip(String id) { return service.getTrip(id); }\n}\n", encoding="utf-8")
+    defs = _definitions(sorted(tmp_path.glob("*.java")))
+    names = {d["node_id"]: d["qualified_name"] for d in defs}
+    src = next(d["node_id"] for d in defs if d["qualified_name"] == "TravelController.getTrip")
+    edges = [(names[t], amb) for s, t, amb in CallResolver(defs).resolve_all().edges if s == src]
+    assert edges == [("TravelServiceImpl.getTrip", False)]
+
+
+def test_python_decorators_are_read(tmp_path):
+    (tmp_path / "views.py").write_text(
+        "@app.route('/pay')\n@login_required\ndef pay():\n    return 1\n", encoding="utf-8")
+    pay = next(d for d in _definitions([tmp_path / "views.py"]) if d["name"] == "pay")
+    assert pay["resolve"]["decorators"] == ["app.route", "login_required"]

@@ -128,6 +128,19 @@ def test_catalog_does_not_invent_risky_roles():
     assert catalog.classify("acme_utils", method="update").category == "Third-Party Library"
 
 
+def test_external_names_drop_call_arguments():
+    """Mockito.when(restTemplate.exchange(<kilobytes>)).thenReturn(...) must not put the
+    whole expression in a node name: Neo4j refuses to index values over ~8 KB."""
+    long_args = ", ".join(f"Mockito.any(Type{i}.class)" for i in range(500))
+    src = {"node_id": "T.java::T.test", "name": "test", "qualified_name": "T.test",
+           "file_path": "T.java",
+           "resolve": {"chunk_type": "method", "scope": "", "inherits": [], "decorators": [],
+                       "call_refs": [f"Mockito.when(restTemplate.exchange({long_args}))|thenReturn"],
+                       "import_map": {"Mockito": "org.mockito.Mockito"}}}
+    externals = CallResolver([src]).resolve_all().externals
+    assert externals == [("T.java::T.test", "org.mockito.Mockito::when.thenReturn")]
+
+
 def test_projects_have_separate_catalogs(tmp_path):
     from kitsune.engine import RepositoryKnowledgeEngine
     a = _write(tmp_path / "a" / "x.py", "import stripe\n\ndef pay():\n    stripe.Charge.create()\n").parent

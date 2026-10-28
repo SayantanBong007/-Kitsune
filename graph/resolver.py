@@ -21,6 +21,7 @@ graph queries skip those edges unless asked to include them.
 from __future__ import annotations
 
 import posixpath
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from kitsune.graph.library_catalog import GLOBAL_CATALOG, DynamicLibraryCatalog
@@ -226,6 +227,11 @@ class CallResolver:
         elif base in var_types:
             named = self._classes_named(var_types[base], src["file_path"])
             current = named[0] if len(named) == 1 else None
+        elif cls and src.get("language") in _IMPLICIT_THIS and self._field_type(cls, base):
+            # Java `service.run()` inside a class means this.service: use the field's type
+            # (@Autowired private TravelService service;)
+            named = self._classes_named(self._field_type(cls, base), src["file_path"])
+            current = named[0] if len(named) == 1 else None
         elif not rest and base in self.class_by_name:
             named = self._classes_named(base, src["file_path"])  # static call: Util.log()
             current = named[0] if len(named) == 1 else None
@@ -339,6 +345,9 @@ class CallResolver:
                     # Call into an imported package: keep its provenance
                     # (stripe::Charge.create) and record it for the library catalog.
                     sub = receiver.split(".", 1)[1] if "." in receiver else ""
+                    # Mockito.when(restTemplate.exchange(...)).thenReturn: keep the call
+                    # chain's names, not its arguments (they can be kilobytes long)
+                    sub = re.split(r"[(\s]", sub, maxsplit=1)[0].rstrip(".")
                     externals.add(f"{pkg}::{sub}.{name}" if sub else f"{pkg}::{name}")
                     self.catalog.record_call(
                         package=pkg,

@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="660" viewBox="0 0 1080 660" role="img" aria-label="What does ts-preserve-service call?">
+<title>What does ts-preserve-service call?</title>
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#898781"/></marker><marker id="arrq" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6250d6"/></marker><marker id="arrh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#eb6834"/></marker></defs>
+<rect width="1080" height="660" fill="#fcfcfb"/>
+<text x="30.0" y="30.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="600">What does ts-preserve-service call?</text>
+<text x="30.0" y="52.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="start" font-weight="normal">12 services · endpoints read from Neo4j</text>
+<circle cx="35" cy="72" r="5" fill="#2a78d6"/>
+<text x="45.0" y="76.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">Java</text>
+<circle cx="89.8" cy="72" r="5" fill="#eb6834"/>
+<text x="99.8" y="76.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">Python</text>
+<circle cx="159.0" cy="72" r="5" fill="#1baf7a"/>
+<text x="169.0" y="76.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">Go</text>
+<circle cx="199.4" cy="72" r="5" fill="#eda100"/>
+<text x="209.4" y="76.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">JavaScript</text>
+<line x1="292.4" y1="72" x2="326.4" y2="72" stroke="#898781" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="334.4" y="76.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">HTTP call</text>
+<line x1="412.4" y1="72" x2="446.4" y2="72" stroke="#6250d6" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#arrq)"/>
+<text x="454.4" y="76.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">message queue</text>
+<path d="M220,356.0 C540.0,356.0 540.0,106.0 858,106.0" fill="none" stroke="#898781" stroke-opacity="0.75" stroke-width="1.4"  marker-end="url(#arr)"/>
+<rect x="860.0" y="92.0" width="190" height="28" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="871.0" cy="106.0" r="4" fill="#2a78d6"/>
+<text x="881.0" y="110.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">assurance</text>
+<path d="M220,356.0 C540.0,356.0 540.0,150.0 858,150.0" fill="none" stroke="#898781" stroke-opacity="0.75" stroke-width="1.4"  marker-end="url(#arr)"/>
+<rect x="860.0" y="136.0" width="190" height="28" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="871.0" cy="150.0" r="4" fill="#2a78d6"/>
+<text x="881.0" y="154.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">basic</text>
+<path d="M220,356.0 C540.0,356.0 540.0,194.0 858,194.0" fill="none" stroke="#898781" stroke-opacity="0.75" stroke-width="1.4"  marker-end="url(#arr)"/>
+<rect x="860.0" y="180.0" width="190" height="28" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="871.0" cy="194.0" r="4" fill="#2a78d6"/>
+<text x="881.0" y="198.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">consign</text>
+<path d="M220,356.0 C540.0,356.0 540.0,238.0 858,238.0" fill="none" stroke="#898781" stroke-opacity="0.75" stroke-width="1.4"  marker-end="url(#arr)"/>
+<rect x="860.0" y="224.0" width="190" height="28" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="871.0" cy="238.0" r="4" fill="#2a78d6"/>
+<text x="881.0" y="242.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">contacts</text>
+<path d="M220,356.0 C540.0,356.0 540.0,282.0 858,282.0" fill="none" stroke="#898781" stroke-opacity="0.75" stroke-width="1.4"  marker-end="url(#arr)"/>
+<rect x="860.0" y="268.0" width="190" height="28" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="871.0" cy="282.0" r="4" fill="#2a78d6"/>
+<text x="881.0" y="286.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">food</text>
+<path d="M220,356.0 C540.0,356.0 540.0,326.0 858,326.0" fill="none" stroke="#6250d6" stroke-opacity="0.75" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#arrq)"/>
+<rect x="860.0" y="312.0" width="190" height="28" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="871.0" cy="326.0" r="4" fill="#2a78d6"/>
+<text x="881.0" y="330.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">notification</text>
+<path d="M220,356.0 C540.0,356.0 540.0,370.0 858,370.0" fill="none" stroke="#898781" stroke-opacity="0.75" stroke-width="1.4"  marker-end="url(#arr)"/>
+<rect x="860.0" y="356.0" width="190" height="28" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="871.0" cy="370.0" r="4" fill="#2a78d6"/>
+<text x="881.0" y="374.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">order</text>
+<path d="M220,356.0 C540.0,356.0 540.0,414.0 858,414.0" fill="none" stroke="#898781" stroke-opacity="0.75" stroke-width="1.4"  marker-end="url(#arr)"/>
+<rect x="860.0" y="400.0" width="190" height="28" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="871.0" cy="414.0" r="4" fill="#2a78d6"/>
+<text x="881.0" y="418.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">seat</text>
+<path d="M220,356.0 C540.0,356.0 540.0,458.0 858,458.0" fill="none" stroke="#898781" stroke-opacity="0.75" stroke-width="1.4"  marker-end="url(#arr)"/>
+<rect x="860.0" y="444.0" width="190" height="28" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="871.0" cy="458.0" r="4" fill="#2a78d6"/>
+<text x="881.0" y="462.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">security</text>
+<path d="M220,356.0 C540.0,356.0 540.0,502.0 858,502.0" fill="none" stroke="#898781" stroke-opacity="0.75" stroke-width="1.4"  marker-end="url(#arr)"/>
+<rect x="860.0" y="488.0" width="190" height="28" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="871.0" cy="502.0" r="4" fill="#2a78d6"/>
+<text x="881.0" y="506.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">station</text>
+<path d="M220,356.0 C540.0,356.0 540.0,546.0 858,546.0" fill="none" stroke="#898781" stroke-opacity="0.75" stroke-width="1.4"  marker-end="url(#arr)"/>
+<rect x="860.0" y="532.0" width="190" height="28" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="871.0" cy="546.0" r="4" fill="#2a78d6"/>
+<text x="881.0" y="550.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">travel</text>
+<path d="M220,356.0 C540.0,356.0 540.0,590.0 858,590.0" fill="none" stroke="#898781" stroke-opacity="0.75" stroke-width="1.4"  marker-end="url(#arr)"/>
+<rect x="860.0" y="576.0" width="190" height="28" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="871.0" cy="590.0" r="4" fill="#2a78d6"/>
+<text x="881.0" y="594.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">user</text>
+<rect x="566.7" y="98.0" width="285.3" height="16" rx="3" fill="#fcfcfb"/>
+<text x="848.0" y="110.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="end" font-weight="normal">GET /api/v1/assuranceservice/assurances/{*}/{*}</text>
+<rect x="619.8" y="142.0" width="232.2" height="16" rx="3" fill="#fcfcfb"/>
+<text x="848.0" y="154.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="end" font-weight="normal">POST /api/v1/basicservice/basic/travel</text>
+<rect x="631.6" y="186.0" width="220.4" height="16" rx="3" fill="#fcfcfb"/>
+<text x="848.0" y="198.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="end" font-weight="normal">POST /api/v1/consignservice/consigns</text>
+<rect x="613.9" y="230.0" width="238.1" height="16" rx="3" fill="#fcfcfb"/>
+<text x="848.0" y="242.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="end" font-weight="normal">GET /api/v1/contactservice/contacts/{*}</text>
+<rect x="661.1" y="274.0" width="190.9" height="16" rx="3" fill="#fcfcfb"/>
+<text x="848.0" y="286.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="end" font-weight="normal">POST /api/v1/foodservice/orders</text>
+<rect x="767.3" y="318.0" width="84.7" height="16" rx="3" fill="#fcfcfb"/>
+<text x="848.0" y="330.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="end" font-weight="normal">publish email</text>
+<rect x="661.1" y="362.0" width="190.9" height="16" rx="3" fill="#fcfcfb"/>
+<text x="848.0" y="374.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="end" font-weight="normal">POST /api/v1/orderservice/order</text>
+<rect x="667.0" y="406.0" width="185.0" height="16" rx="3" fill="#fcfcfb"/>
+<text x="848.0" y="418.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="end" font-weight="normal">POST /api/v1/seatservice/seats</text>
+<rect x="566.7" y="450.0" width="285.3" height="16" rx="3" fill="#fcfcfb"/>
+<text x="848.0" y="462.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="end" font-weight="normal">GET /api/v1/securityservice/securityConfigs/{*}</text>
+<rect x="596.2" y="494.0" width="255.8" height="16" rx="3" fill="#fcfcfb"/>
+<text x="848.0" y="506.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="end" font-weight="normal">GET /api/v1/stationservice/stations/id/{*}</text>
+<rect x="619.8" y="538.0" width="232.2" height="16" rx="3" fill="#fcfcfb"/>
+<text x="848.0" y="550.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="end" font-weight="normal">POST /api/v1/travelservice/trip_detail</text>
+<rect x="631.6" y="582.0" width="220.4" height="16" rx="3" fill="#fcfcfb"/>
+<text x="848.0" y="594.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="end" font-weight="normal">GET /api/v1/userservice/users/id/{*}</text>
+<rect x="30.0" y="336.0" width="190" height="40" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="41.0" cy="356.0" r="4" fill="#2a78d6"/>
+<text x="51.0" y="360.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600">preserve</text>
+</svg>

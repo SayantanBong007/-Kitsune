@@ -90,6 +90,7 @@ EDGE_HTTP = "HTTP_CALLS"
 EDGE_GRPC = "GRPC_CALLS"
 EDGE_MESSAGE = "MESSAGES"
 SERVICE_EDGE_TYPES = (EDGE_HTTP, EDGE_GRPC, EDGE_MESSAGE)
+_MAX_NAME = 300   # longest node name stored (Neo4j can't index property values over ~8 KB)
 _LINK_EDGE = {"http": EDGE_HTTP, "grpc": EDGE_GRPC, "queue": EDGE_MESSAGE}
 
 
@@ -713,6 +714,9 @@ class GraphStore:
         indexed (stdlib, libraries), stored as stub nodes. Returns the number
         of resolved call edges.
         """
+        # A callee name is an identifier chain; cap it so odd source never yields a
+        # value too large for Neo4j's property index (~8 KB), which aborts the write.
+        externals = [(src, name[:_MAX_NAME]) for src, name in externals]
         if self.use_fallback:
             assert self.nx_graph is not None
             calls = [(u, v) for u, v, d in self.nx_graph.edges(data=True)

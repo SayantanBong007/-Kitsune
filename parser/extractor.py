@@ -202,8 +202,17 @@ def extract_decorators(node: Node, source: bytes) -> list[str]:
     """
     decorators: list[str] = []
 
+    # Where annotations live depends on the grammar: directly on the node (TS), inside its
+    # `modifiers` (Java: `@Service public class X`), or on the parent `decorated_definition`
+    # (Python). A bare `@Service` is a marker_annotation in Java.
+    candidates = list(node.children)
     for child in node.children:
-        if child.type in ("decorator", "annotation", "decorator_call"):
+        if child.type == "modifiers":
+            candidates.extend(child.children)
+    if node.parent is not None and node.parent.type == "decorated_definition":
+        candidates.extend(node.parent.children)
+    for child in candidates:
+        if child.type in ("decorator", "annotation", "marker_annotation", "decorator_call"):
             text = get_node_text(child, source)
             # Extract just the decorator name: "@app.route('/')" → "app.route"
             name = text.lstrip("@").split("(")[0].strip()

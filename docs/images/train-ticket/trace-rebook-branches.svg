@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="550" viewBox="0 0 1040 550" role="img" aria-label="From one function to another service: rebook → travel + travel2">
+<title>From one function to another service: rebook → travel + travel2</title>
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#898781"/></marker><marker id="arrq" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6250d6"/></marker><marker id="arrh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#eb6834"/></marker></defs>
+<rect width="1040" height="550" fill="#fcfcfb"/>
+<text x="40.0" y="30.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="600">From one function to another service: rebook → travel + travel2</text>
+<text x="40.0" y="52.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="start" font-weight="normal">Read from Neo4j: CALLS edges inside each service, and the cross-service edge between them</text>
+<rect x="24" y="76" width="362" height="250" rx="10" fill="none" stroke="#c3c2b7" stroke-dasharray="4 4"/>
+<text x="40.0" y="96.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="start" font-weight="600">service: ts-rebook-service</text>
+<rect x="40.0" y="110.0" width="330" height="44" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="51.0" cy="132.0" r="4" fill="#2a78d6"/>
+<text x="61.0" y="126.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">RebookServiceImpl.payDifference</text>
+<text x="61.0" y="141.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="start" font-weight="normal">rebook/service/RebookServiceImpl.java:145</text>
+<rect x="40.0" y="180.0" width="330" height="44" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="51.0" cy="202.0" r="4" fill="#2a78d6"/>
+<text x="61.0" y="196.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">RebookServiceImpl.rebook</text>
+<text x="61.0" y="211.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="start" font-weight="normal">rebook/service/RebookServiceImpl.java:47</text>
+<line x1="205.0" y1="154" x2="205.0" y2="178" stroke="#898781" stroke-width="1.4" marker-end="url(#arr)"/>
+<line x1="205.0" y1="224" x2="205.0" y2="248" stroke="#898781" stroke-width="1.4" marker-end="url(#arr)"/>
+<rect x="40.0" y="250.0" width="330" height="44" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="51.0" cy="272.0" r="4" fill="#2a78d6"/>
+<text x="61.0" y="266.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600">RebookServiceImpl.getTripAllDetailInformation</text>
+<text x="61.0" y="281.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="start" font-weight="normal">rebook/service/RebookServiceImpl.java:295</text>
+<rect x="634" y="76" width="362" height="170" rx="10" fill="none" stroke="#c3c2b7" stroke-dasharray="4 4"/>
+<text x="650.0" y="96.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="start" font-weight="600">service: ts-travel-service</text>
+<rect x="650.0" y="110.0" width="330" height="44" rx="6" fill="#ffffff" stroke="#eb6834" stroke-width="1.6"/>
+<circle cx="661.0" cy="132.0" r="4" fill="#eb6834"/>
+<text x="671.0" y="126.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600">TravelController.getTripAllDetailInfo</text>
+<text x="671.0" y="141.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="start" font-weight="normal">travel/controller/TravelController.java:154</text>
+<path d="M370,272.0 C510.0,272.0 510.0,132.0 648,132.0" fill="none" stroke="#eb6834" stroke-width="2.4" marker-end="url(#arrh)"/>
+<rect x="385.0" y="172.0" width="250" height="40" rx="6" fill="#fcfcfb" stroke="#eb6834" stroke-width="1"/>
+<text x="510.0" y="188.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11" fill="#0b0b0b" text-anchor="middle" font-weight="600">HTTP_CALLS · POST · confirmed</text>
+<text x="510.0" y="204.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="middle" font-weight="normal">/api/v1/travelservice/trip_detail</text>
+<path d="M674,154 V202.0 H684" fill="none" stroke="#898781" stroke-width="1.4" marker-end="url(#arr)"/>
+<rect x="686.0" y="180.0" width="294" height="44" rx="6" fill="#ffffff" stroke="#eb6834" stroke-width="1.6"/>
+<circle cx="697.0" cy="202.0" r="4" fill="#eb6834"/>
+<text x="707.0" y="196.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">TravelServiceImpl.getTripAllDetailInfo</text>
+<text x="707.0" y="211.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="start" font-weight="normal">travel/service/TravelServiceImpl.java:295</text>
+<rect x="634" y="276" width="362" height="170" rx="10" fill="none" stroke="#c3c2b7" stroke-dasharray="4 4"/>
+<text x="650.0" y="296.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="start" font-weight="600">service: ts-travel2-service</text>
+<rect x="650.0" y="310.0" width="330" height="44" rx="6" fill="#ffffff" stroke="#eb6834" stroke-width="1.6"/>
+<circle cx="661.0" cy="332.0" r="4" fill="#eb6834"/>
+<text x="671.0" y="326.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600">Travel2Controller.getTripAllDetailInfo</text>
+<text x="671.0" y="341.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="start" font-weight="normal">travel2/controller/Travel2Controller.java:126</text>
+<path d="M370,272.0 C510.0,272.0 510.0,332.0 648,332.0" fill="none" stroke="#eb6834" stroke-width="2.4" marker-end="url(#arrh)"/>
+<rect x="385.0" y="272.0" width="250" height="40" rx="6" fill="#fcfcfb" stroke="#eb6834" stroke-width="1"/>
+<text x="510.0" y="288.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11" fill="#0b0b0b" text-anchor="middle" font-weight="600">HTTP_CALLS · POST · confirmed</text>
+<text x="510.0" y="304.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="middle" font-weight="normal">/api/v1/travel2service/trip_detail</text>
+<path d="M674,354 V402.0 H684" fill="none" stroke="#898781" stroke-width="1.4" marker-end="url(#arr)"/>
+<rect x="686.0" y="380.0" width="294" height="44" rx="6" fill="#ffffff" stroke="#eb6834" stroke-width="1.6"/>
+<circle cx="697.0" cy="402.0" r="4" fill="#eb6834"/>
+<text x="707.0" y="396.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">TravelServiceImpl.getTripAllDetailInfo</text>
+<text x="707.0" y="411.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="start" font-weight="normal">travel2/service/TravelServiceImpl.java:212</text>
+<text x="40.0" y="528.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#52514e" text-anchor="start" font-weight="normal">Thin arrows: function calls inside a service (CALLS).  Thick arrow: the cross-service edge Kitsune added.</text>
+</svg>

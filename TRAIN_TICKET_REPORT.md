@@ -16,6 +16,7 @@
 | **Accuracy, after fixes** | precision **100%**, recall **100%**, wrong links **0**, impact questions **5/5** |
 | **Time** | 8 min 21 s to index everything on a 4-core laptop (20 s of that is service linking) |
 | **Bonus** | Kitsune surfaced **two real bugs in Train Ticket**: calls to routes that don't exist or use the wrong HTTP method |
+| **Pictures** | 5 graph images drawn from Kitsune's Neo4j graph, plus 2 accuracy charts |
 
 **Contents:**
 1. [The system under test](#1-the-system-under-test)
@@ -27,7 +28,8 @@
 7. [What Kitsune flags as uncertain](#7-what-kitsune-flags-as-uncertain)
 8. [Comparison with the other systems](#8-comparison-with-the-other-systems)
 9. [Limits and next steps](#9-limits-and-next-steps)
-10. [Reproduce](#10-reproduce)
+10. [See it live in Neo4j](#10-see-it-live-in-neo4j)
+11. [Reproduce](#11-reproduce)
 
 ---
 
@@ -64,6 +66,15 @@ flowchart LR
     PRES -. "queue: email" .-> NOTI["ts-notification-service"]
 ```
 *Part of the real dependency graph Kitsune reconstructed. The full graph has 134 edges.*
+
+**The full service map, read straight from Kitsune's Neo4j graph:**
+
+![Train Ticket service map from Neo4j](docs/images/train-ticket/service-map.svg)
+
+*Every box is a service, colored by language. Every arrow is a real call found in the code
+(dashed purple = RabbitMQ). Columns run from entry points on the left to leaf services on
+the right. The gateway's 38 routes come from its config and are summarised in its box,
+because drawing them would hide everything else.*
 
 ---
 
@@ -131,6 +142,10 @@ This is the hard part: URLs are built in code, not written out. Real examples fr
 | **RabbitMQ** | `rabbitTemplate.convertAndSend(Queues.queueName, val)` with `queueName = "food_delivery"` | publish to `food_delivery` |
 | **Gateway routes (config)** | `uri: lb://${ORDER_SERVICE_HOST:ts-order-service}` | gateway → `ts-order-service` |
 
+**The if/else case, as stored in Neo4j:** one function, two target services, both found.
+
+![rebook calls travel and travel2 from one function](docs/images/train-ticket/trace-rebook-branches.svg)
+
 **Found: 159 HTTP calls in code, 4 queue publishes, and 40 routing entries** (39 gateway routes + the nginx UI → gateway): 203 in total.
 
 ### ⑤ Match calls to offers
@@ -159,6 +174,14 @@ Service links are stored as `HTTP_CALLS` and `MESSAGES` edges in the **same grap
 function-level `CALLS` edges. A question can therefore walk from a function in one service,
 across the network, into the handler in another.
 
+![Function-level trace from preserve to order, read from Neo4j](docs/images/train-ticket/trace-booking.svg)
+
+*Booking a ticket, as stored in Neo4j: `PreserveServiceImpl.preserve` calls `createOrder`.
+That function sends `POST /api/v1/orderservice/order`, which Kitsune connects to
+`OrderController.createNewOrder` in another service. The controller calls `OrderService.create`
+through an interface, and Kitsune follows the `@Service` bean to `OrderServiceImpl.create`.
+That is dependency injection resolved across a service boundary.*
+
 | Most depended-on services | Callers | | Most outgoing calls | Services called |
 |---|---|---|---|---|
 | ts-order-service | 10 | | ts-gateway-service | 38 |
@@ -184,6 +207,10 @@ across the network, into the handler in another.
 | *"…if **ts-seat-service** changes?"* | gateway, preserve, preserve-other, rebook, travel, travel2, travel-plan (**7**, exact) |
 | *"Who calls `POST /api/v1/orderservice/order`?"* | `engine.get_endpoint_callers(...)` returns each caller with **file and line** |
 | *"What does booking a ticket touch?"* | preserve → order, travel, seat, user, contacts, security, food, consign, assurance, station and basic, plus the `email` queue |
+
+![Who is affected if ts-order-service changes](docs/images/train-ticket/impact-order.svg)
+
+![What booking a ticket touches](docs/images/train-ticket/fanout-preserve.svg)
 
 ```python
 engine.get_service_links("ts-order-service", "in")          # who depends on order
@@ -265,6 +292,17 @@ Every fix is a general rule about real code, covered by a unit test. None is a T
 | 11 | Docs folders counted as services | `old-docs/…` | Skipped |
 | 12 | Python keyword arguments ignored | `Request(url=url)` | `url=` / `uri=` values evaluated |
 
+**Found while loading Train Ticket into Neo4j for this report:**
+
+| # | Weakness | What happened | Fix |
+|---|---|---|---|
+| 13 | **Java class annotations not read** | `@Service`, `@RestController` on a class sit inside its `modifiers`, and a bare `@Service` is a `marker_annotation`. Neither was read, so dependency injection stopped at the interface (`OrderService.create`) instead of the bean (`OrderServiceImpl.create`). Python decorators on a `decorated_definition` were missed the same way. The old DI unit test passed only because it supplied annotations by hand | Annotations read from `modifiers`, `marker_annotation` and `decorated_definition`; new tests parse **real Java and Python source** |
+| 14 | **Huge node names broke the Neo4j load** | In `Mockito.when(restTemplate.exchange(…)).thenReturn(…)`, the whole expression became an external node's name: 11 KB in Train Ticket's tests. Neo4j can't index values over ~8 KB, so the whole load aborted | Names keep only the call chain (`org.mockito.Mockito::when.thenReturn`), plus a 300-character safety cap |
+| 15 | **Java fields with generic names not typed** | `@Autowired private TravelService service;` then `service.getTripAllDetailInfo(…)`. In Java a bare `service` means `this.service`, but the resolver only matched variable names to class names (`orderService` ≈ `OrderService`), so `service` stayed **ambiguous** across 3 candidates | A bare receiver in Java/C++ takes the enclosing class's field type; test added |
+
+Neither affected the link scores above: service links come from contract extraction, which
+reads annotations its own way. Both matter for the code-level graph and for production loads.
+
 Fix #4 was found by the new unit test, not by Train Ticket. On Train Ticket, the
 `getServiceUrl("ts-…")` pattern only worked by luck: the long service names won a tie-break
 that short names lose.
@@ -299,8 +337,9 @@ All five systems after the fixes, measured with full indexing on a 4-core laptop
 | **Train Ticket** | **47** | **RestTemplate + RabbitMQ + gateway** | **100%** | **100%** | **0** | **5/5** | **62% recall, 80% precision** | **501 s** |
 
 **Checks after the fixes:**
-- **Unit tests:** 57 pass.
-- **Single repository (44 questions):** unchanged. Retrieval recall 97.5%, call graph 100%.
+- **Unit tests:** 60 pass.
+- **Single repository (44 questions):** retrieval recall 97.5% and call graph 100%, both unchanged.
+- **Top-3 retrieval hits:** dropped from 90% to 85%. That is 1 question of 20, where the right code is still found but now ranks 4th or lower. The likely cause is that real decorators (fix #13) now appear in the text that is embedded. This is within noise, but it's reported here.
 
 ---
 
@@ -317,7 +356,34 @@ All five systems after the fixes, measured with full indexing on a 4-core laptop
 
 ---
 
-## 10. Reproduce
+## 10. See it live in Neo4j
+
+Train Ticket is loaded in the local Neo4j under namespace `train_ticket`. Open Neo4j Browser at
+http://localhost:7474 and run:
+
+```cypher
+// Which service calls which (one row per pair)
+MATCH (a:Chunk {ns:'train_ticket'})-[r:HTTP_CALLS|MESSAGES]->(b:Chunk {ns:'train_ticket'})
+RETURN a.service AS from, b.service AS to, type(r) AS kind, count(*) AS calls ORDER BY calls DESC
+
+// The graph view: functions calling across services
+MATCH p = (:Chunk {ns:'train_ticket'})-[:HTTP_CALLS|MESSAGES]->(:Chunk {ns:'train_ticket'})
+RETURN p LIMIT 80
+
+// Impact: everything that calls into ts-order-service
+MATCH p = (:Chunk {ns:'train_ticket'})-[:HTTP_CALLS]->(:Chunk {ns:'train_ticket', service:'ts-order-service'})
+RETURN p
+
+// Booking end to end: calls inside preserve → HTTP → order → its implementation
+MATCH p = (:Chunk {ns:'train_ticket'})-[:CALLS*0..2]->(a:Chunk {ns:'train_ticket', service:'ts-preserve-service'})
+          -[:HTTP_CALLS]->(b:Chunk {ns:'train_ticket', service:'ts-order-service'})-[:CALLS*0..1]->()
+RETURN p LIMIT 25
+```
+
+The images in this report were drawn from the same graph with
+`eval/render_system_images.py` and `eval/render_eval_charts.py`.
+
+## 11. Reproduce
 
 ```bash
 python kitsune/eval/fetch_external.py                              # all 5 systems, pinned commits

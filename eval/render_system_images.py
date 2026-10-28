@@ -92,7 +92,7 @@ class GraphData:
         from neo4j import GraphDatabase
         uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
         auth = (os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "kitsune_password"))
-        self.driver = GraphDatabase.driver(uri, auth=auth)
+        self.driver = GraphDatabase.driver(uri, auth=auth, notifications_min_severity="OFF")
         self.ns = ns
 
     def q(self, cypher: str, **params):
@@ -192,14 +192,15 @@ def service_map(edges, langs, services, routes, out: Path, title: str):
     pos = {}
     for c, members in cols.items():
         x = LEFT + c * (W + GAPX)
-        y0 = TOP + (tallest - len(members)) * (H + GAPY) / 2
+        step = (H + 22 + GAPY) if c == 0 else (H + GAPY)   # router boxes carry a second line
+        y0 = TOP + (tallest * (H + GAPY) - len(members) * step) / 2
         for i, n in enumerate(members):
-            pos[n] = (x, y0 + i * (H + GAPY))
+            pos[n] = (x, y0 + i * step)
     color = lambda n: SLOTS[LANG_ORDER.index(langs[n])] if langs.get(n) in LANG_ORDER else MUTED
     body = [text(LEFT, 30, title, 18, INK, weight="600"),
-            text(LEFT, 52, f"{len(nodes)} services · {len(pair)} service-to-service connections "
-                           f"read from Neo4j · columns run from entry points (left) to leaf services (right)",
-                 12.5, INK2)]
+            text(LEFT, 52, f"{len(nodes)} services · {len(pair)} code-level service connections read from Neo4j"
+                           f" + {sum(r['count'] for r in routes)} gateway/UI routes from config · columns run from "
+                           f"entry points (left) to leaf services (right)", 12.5, INK2)]
     body += legend(LEFT, 78, [(l, SLOTS[i]) for i, l in enumerate(LANG_ORDER)], dashed_queue=True)
     for (a, b), e in sorted(pair.items(), key=lambda kv: kv[1]["kind"]):
         (x1, y1), (x2, y2) = pos[a], pos[b]
@@ -214,15 +215,18 @@ def service_map(edges, langs, services, routes, out: Path, title: str):
         dash = 'stroke-dasharray="5 4"' if q else ""
         body.append(f'<path d="{d}" fill="none" stroke="{SLOTS[6] if q else MUTED}" stroke-opacity="{0.9 if q else 0.55}" '
                     f'stroke-width="{w:.2f}" {dash} marker-end="url(#{"arrq" if q else "arr"})"/>')
-    for r in routes:   # gateway / UI routes: summarised, not drawn (one line per route would hide the rest)
-        if r["from"] in pos:
-            x, y = pos[r["from"]]
-            body.append(text(x, y + H + 15, f"→ routes to {r['count']} services (config)", 10.5, INK2))
+    # gateway / UI routes are summarised in the box, not drawn: one line per route would hide the rest
+    route_count = {r["from"]: r["count"] for r in routes}
     for n, (x, y) in pos.items():
-        body += node_box(x, y, W, H, short(n), color(n), bold=n in routers)
+        if n in routers:
+            body += node_box(x, y, W, H + 22, short(n), color(n),
+                             sub=f"routes to {route_count[n]} service{'s' if route_count[n] != 1 else ''} (config)",
+                             bold=True)
+        else:
+            body += node_box(x, y, W, H, short(n), color(n))
     if isolated:
         y = TOP + tallest * (H + GAPY) + 40
-        body.append(text(LEFT, y, "No service-to-service calls (reached only through the gateway):", 12, INK2, weight="600"))
+        body.append(text(LEFT, y, "No calls to or from other services in code:", 12, INK2, weight="600"))
         body.append(text(LEFT, y + 20, ", ".join(short(n) for n in isolated), 12, INK2))
     out.write_text(svg(int(width), int(height), body, title), encoding="utf-8")
 
@@ -243,6 +247,7 @@ def star(center, rows, langs, out: Path, title: str, subtitle: str, incoming: bo
     color = lambda s: SLOTS[LANG_ORDER.index(langs[s])] if langs.get(s) in LANG_ORDER else MUTED
     body = [text(LEFT, 30, title, 18, INK, weight="600"), text(LEFT, 52, subtitle, 12.5, INK2)]
     body += legend(LEFT, 76, [(l, SLOTS[i]) for i, l in enumerate(LANG_ORDER)], dashed_queue=True)
+    labels = []
     for i, r in enumerate(rows):
         y = TOP + i * ROWH
         q = r["kind"] == "MESSAGES"
@@ -258,9 +263,15 @@ def star(center, rows, langs, out: Path, title: str, subtitle: str, incoming: bo
                     f'stroke-opacity="0.75" stroke-width="1.4" {dash} marker-end="url(#{"arrq" if q else "arr"})"/>')
         eps = sorted(r["endpoints"])
         label = eps[0] + (f"  (+{len(eps) - 1} more)" if len(eps) > 1 else "")
-        lx = (px + W + 14) if incoming else (px - 14)
-        body.append(text(lx, y + H / 2 + 4, label, 10.5, INK2, anchor="start" if incoming else "end"))
+        lx = (px + W + 12) if incoming else (px - 12)
+        labels.append((lx, y + H / 2 + 4, label))
         body += node_box(px, y, W, H, short(r["peer"]), color(r["peer"]))
+    # endpoint labels last, on a surface backing, so no edge runs through the text
+    for lx, ly, label in labels:
+        lw = 5.9 * len(label) + 8
+        bx = (lx - 4) if incoming else (lx - lw + 4)
+        body.append(f'<rect x="{bx:.1f}" y="{ly - 12:.1f}" width="{lw:.1f}" height="16" rx="3" fill="{SURFACE}"/>')
+        body.append(text(lx, ly, label, 10.5, INK2, anchor="start" if incoming else "end"))
     body += node_box(cx, cy - 6, W, H + 12, short(center), color(center), bold=True)
     out.write_text(svg(width, int(height), body, title), encoding="utf-8")
 
@@ -276,7 +287,7 @@ def trace(g: GraphData, links: list[dict], root: str, out: Path, title: str, sub
     LX, RX, TOP = 40, 650, 110
     body = [text(LX, 30, title, 18, INK, weight="600"), text(LX, 52, subtitle, 12.5, INK2)]
     # swimlane for the calling service
-    lane_h = max(3, len(ups) + 1) * (H + 26) + 40
+    lane_h = (len(ups) + 1) * (H + 26) + 40
     rows_right = []
     for l in links:
         dst = g.q("MATCH (c:Chunk {id: $id}) RETURN c.service AS s", id=l["bid"])[0]["s"]
@@ -315,10 +326,10 @@ def trace(g: GraphData, links: list[dict], root: str, out: Path, title: str, sub
         body.append(text(mx, (sy + ty) / 2 - 14, f"{l['kind']} · {l['method']} · {conf}", 11, INK, "middle", "600"))
         body.append(text(mx, (sy + ty) / 2 + 2, l["path"], 10.5, INK2, "middle"))
         dy = ry + H + 26
-        for d in downs:
-            body.append(f'<line x1="{RX + W / 2}" y1="{dy - 26}" x2="{RX + W / 2}" y2="{dy - 2}" stroke="{MUTED}" '
+        for d in downs:   # each is called by the handler: elbow from the handler, not a chain
+            body.append(f'<path d="M{RX + 24},{ry + H} V{dy + H / 2} H{RX + 34}" fill="none" stroke="{MUTED}" '
                         f'stroke-width="1.4" marker-end="url(#arr)"/>')
-            body += node_box(RX, dy, W, H, d["name"], SLOTS[1], sub=f"{rel(d['file'], root)}:{d['line']}")
+            body += node_box(RX + 36, dy, W - 36, H, d["name"], SLOTS[1], sub=f"{rel(d['file'], root)}:{d['line']}")
             dy += H + 26
         ry += lane + 30
     body.append(text(LX, height - 22, "Thin arrows: function calls inside a service (CALLS).  "

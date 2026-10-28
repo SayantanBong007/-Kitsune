@@ -1,0 +1,247 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1732" height="671" viewBox="0 0 1732 671" role="img" aria-label="Train Ticket: service map">
+<title>Train Ticket: service map</title>
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#898781"/></marker><marker id="arrq" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6250d6"/></marker><marker id="arrh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#eb6834"/></marker></defs>
+<rect width="1732" height="671" fill="#fcfcfb"/>
+<text x="30.0" y="30.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="18" fill="#0b0b0b" text-anchor="start" font-weight="600">Train Ticket: service map</text>
+<text x="30.0" y="52.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#52514e" text-anchor="start" font-weight="normal">47 services · 95 code-level service connections read from Neo4j + 39 gateway/UI routes from config · columns run from entry points (left) to leaf services (right)</text>
+<circle cx="35" cy="74" r="5" fill="#2a78d6"/>
+<text x="45.0" y="78.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">Java</text>
+<circle cx="89.8" cy="74" r="5" fill="#eb6834"/>
+<text x="99.8" y="78.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">Python</text>
+<circle cx="159.0" cy="74" r="5" fill="#1baf7a"/>
+<text x="169.0" y="78.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">Go</text>
+<circle cx="199.4" cy="74" r="5" fill="#eda100"/>
+<text x="209.4" y="78.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">JavaScript</text>
+<line x1="292.4" y1="74" x2="326.4" y2="74" stroke="#898781" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="334.4" y="78.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">HTTP call</text>
+<line x1="412.4" y1="74" x2="446.4" y2="74" stroke="#6250d6" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#arrq)"/>
+<text x="454.4" y="78.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">message queue</text>
+<path d="M442,109.0 C614.0,109.0 614.0,249.0 784,249.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="2.10"  marker-end="url(#arr)"/>
+<path d="M442,109.0 C992.0,109.0 992.0,354.0 1540,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="2.10"  marker-end="url(#arr)"/>
+<path d="M442,109.0 C992.0,109.0 992.0,284.0 1540,284.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="2.10"  marker-end="url(#arr)"/>
+<path d="M442,109.0 C992.0,109.0 992.0,249.0 1540,249.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="2.10"  marker-end="url(#arr)"/>
+<path d="M442,109.0 C992.0,109.0 992.0,214.0 1540,214.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="2.10"  marker-end="url(#arr)"/>
+<path d="M442,459.0 C992.0,459.0 992.0,389.0 1540,389.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="2.10"  marker-end="url(#arr)"/>
+<path d="M442,459.0 C992.0,459.0 992.0,424.0 1540,424.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="2.10"  marker-end="url(#arr)"/>
+<path d="M442,319.0 C992.0,319.0 992.0,319.0 1540,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.85"  marker-end="url(#arr)"/>
+<path d="M442,319.0 C992.0,319.0 992.0,354.0 1540,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,249.0 C740.0,249.0 740.0,301.5 1036,301.5" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="2.10"  marker-end="url(#arr)"/>
+<path d="M442,249.0 C614.0,249.0 614.0,319.0 784,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="2.10"  marker-end="url(#arr)"/>
+<path d="M442,249.0 C992.0,249.0 992.0,354.0 1540,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,249.0 C992.0,249.0 992.0,284.0 1540,284.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,249.0 C992.0,249.0 992.0,319.0 1540,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,214.0 C614.0,214.0 614.0,284.0 784,284.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="2.10"  marker-end="url(#arr)"/>
+<path d="M1198,266.5 C1244.0,266.5 1244.0,284.0 1288,284.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M1450,319.0 C1496.0,319.0 1496.0,354.0 1540,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M1450,319.0 C1496.0,319.0 1496.0,284.0 1540,284.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M1450,319.0 C1496.0,319.0 1496.0,319.0 1540,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M1450,319.0 C1496.0,319.0 1496.0,214.0 1540,214.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M442,389.0 C614.0,389.0 614.0,459.0 784,459.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,389.0 C992.0,389.0 992.0,389.0 1540,389.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M442,389.0 C992.0,389.0 992.0,424.0 1540,424.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M442,389.0 C488.0,389.0 488.0,319.0 532,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,389.0 C614.0,389.0 614.0,284.0 784,284.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M946,214.0 C992.0,214.0 992.0,231.5 1036,231.5" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,494.0 C992.0,494.0 992.0,389.0 1540,389.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M442,494.0 C992.0,494.0 992.0,424.0 1540,424.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M442,424.0 C740.0,424.0 740.0,406.5 1036,406.5" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M946,354.0 C992.0,354.0 992.0,371.5 1036,371.5" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M946,354.0 C992.0,354.0 992.0,301.5 1036,301.5" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M946,354.0 C992.0,354.0 992.0,406.5 1036,406.5" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M694,319.0 C1118.0,319.0 1118.0,389.0 1540,389.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M694,319.0 C1118.0,319.0 1118.0,424.0 1540,424.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M694,319.0 C740.0,319.0 740.0,179.0 784,179.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M1702,424.0 C1762,464.0 1482,394.0 1542,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M1702,389.0 C1762,429.0 1482,394.0 1542,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,354.0 C866.0,354.0 866.0,319.0 1288,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,354.0 C866.0,354.0 866.0,354.0 1288,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,354.0 C614.0,354.0 614.0,284.0 784,284.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,354.0 C614.0,354.0 614.0,389.0 784,389.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,354.0 C992.0,354.0 992.0,354.0 1540,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,354.0 C614.0,354.0 614.0,424.0 784,424.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,354.0 C614.0,354.0 614.0,319.0 784,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,354.0 C614.0,354.0 614.0,249.0 784,249.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,354.0 C992.0,354.0 992.0,424.0 1540,424.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,354.0 C614.0,354.0 614.0,354.0 784,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,354.0 C614.0,354.0 614.0,214.0 784,214.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M694,354.0 C992.0,354.0 992.0,319.0 1288,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M694,354.0 C992.0,354.0 992.0,354.0 1288,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M694,354.0 C740.0,354.0 740.0,284.0 784,284.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M694,354.0 C740.0,354.0 740.0,389.0 784,389.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M694,354.0 C1118.0,354.0 1118.0,354.0 1540,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M694,354.0 C740.0,354.0 740.0,424.0 784,424.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M694,354.0 C866.0,354.0 866.0,301.5 1036,301.5" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M694,354.0 C740.0,354.0 740.0,249.0 784,249.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M694,354.0 C1118.0,354.0 1118.0,389.0 1540,389.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M694,354.0 C740.0,354.0 740.0,354.0 784,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M694,354.0 C740.0,354.0 740.0,214.0 784,214.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,284.0 C866.0,284.0 866.0,354.0 1288,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,284.0 C740.0,284.0 740.0,301.5 1036,301.5" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,284.0 C614.0,284.0 614.0,319.0 784,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,284.0 C992.0,284.0 992.0,389.0 1540,389.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="2.10"  marker-end="url(#arr)"/>
+<path d="M442,284.0 C992.0,284.0 992.0,424.0 1540,424.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="2.10"  marker-end="url(#arr)"/>
+<path d="M442,284.0 C992.0,284.0 992.0,284.0 1540,284.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,284.0 C992.0,284.0 992.0,319.0 1540,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,284.0 C488.0,284.0 488.0,319.0 532,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M694,284.0 C1118.0,284.0 1118.0,319.0 1540,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M694,284.0 C866.0,284.0 866.0,301.5 1036,301.5" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="2.10"  marker-end="url(#arr)"/>
+<path d="M694,284.0 C740.0,284.0 740.0,319.0 784,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="2.10"  marker-end="url(#arr)"/>
+<path d="M1450,354.0 C1496.0,354.0 1496.0,389.0 1540,389.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M1450,354.0 C1496.0,354.0 1496.0,424.0 1540,424.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M1450,354.0 C1496.0,354.0 1496.0,249.0 1540,249.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M946,424.0 C1244.0,424.0 1244.0,389.0 1540,389.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M946,424.0 C1244.0,424.0 1244.0,424.0 1540,424.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,179.0 C866.0,179.0 866.0,354.0 1288,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,179.0 C488.0,179.0 488.0,284.0 532,284.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.85"  marker-end="url(#arr)"/>
+<path d="M442,179.0 C740.0,179.0 740.0,301.5 1036,301.5" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,179.0 C614.0,179.0 614.0,319.0 784,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,179.0 C992.0,179.0 992.0,284.0 1540,284.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M1198,301.5 C1244.0,301.5 1244.0,319.0 1288,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M1198,301.5 C1370.0,301.5 1370.0,284.0 1540,284.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M1198,301.5 C1370.0,301.5 1370.0,319.0 1540,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M1198,301.5 C1244.0,301.5 1244.0,354.0 1288,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M946,319.0 C1118.0,319.0 1118.0,319.0 1288,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M946,319.0 C1244.0,319.0 1244.0,284.0 1540,284.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M946,319.0 C1244.0,319.0 1244.0,319.0 1540,319.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M946,319.0 C1118.0,319.0 1118.0,354.0 1288,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M946,284.0 C992.0,284.0 992.0,266.5 1036,266.5" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.60"  marker-end="url(#arr)"/>
+<path d="M442,529.0 C992.0,529.0 992.0,424.0 1540,424.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,529.0 C992.0,529.0 992.0,389.0 1540,389.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M442,144.0 C488.0,144.0 488.0,354.0 532,354.0" fill="none" stroke="#898781" stroke-opacity="0.55" stroke-width="1.35"  marker-end="url(#arr)"/>
+<path d="M946,354.0 C992.0,354.0 992.0,336.5 1036,336.5" fill="none" stroke="#6250d6" stroke-opacity="0.9" stroke-width="1.35" stroke-dasharray="5 4" marker-end="url(#arrq)"/>
+<path d="M442,354.0 C614.0,354.0 614.0,459.0 784,459.0" fill="none" stroke="#6250d6" stroke-opacity="0.9" stroke-width="1.35" stroke-dasharray="5 4" marker-end="url(#arrq)"/>
+<path d="M694,354.0 C740.0,354.0 740.0,459.0 784,459.0" fill="none" stroke="#6250d6" stroke-opacity="0.9" stroke-width="1.35" stroke-dasharray="5 4" marker-end="url(#arrq)"/>
+<rect x="282.0" y="96.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="293.0" cy="109.0" r="4" fill="#2a78d6"/>
+<text x="303.0" y="113.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">admin-basic-info</text>
+<rect x="282.0" y="131.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="293.0" cy="144.0" r="4" fill="#2a78d6"/>
+<text x="303.0" y="148.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">wait-order</text>
+<rect x="282.0" y="166.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="293.0" cy="179.0" r="4" fill="#2a78d6"/>
+<text x="303.0" y="183.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">travel-plan</text>
+<rect x="282.0" y="201.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="293.0" cy="214.0" r="4" fill="#2a78d6"/>
+<text x="303.0" y="218.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">admin-user</text>
+<rect x="282.0" y="236.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="293.0" cy="249.0" r="4" fill="#2a78d6"/>
+<text x="303.0" y="253.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">admin-travel</text>
+<rect x="282.0" y="271.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="293.0" cy="284.0" r="4" fill="#2a78d6"/>
+<text x="303.0" y="288.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">rebook</text>
+<rect x="282.0" y="306.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="293.0" cy="319.0" r="4" fill="#2a78d6"/>
+<text x="303.0" y="323.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">admin-route</text>
+<rect x="282.0" y="341.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="293.0" cy="354.0" r="4" fill="#2a78d6"/>
+<text x="303.0" y="358.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">preserve-other</text>
+<rect x="282.0" y="376.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="293.0" cy="389.0" r="4" fill="#2a78d6"/>
+<text x="303.0" y="393.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">cancel</text>
+<rect x="282.0" y="411.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="293.0" cy="424.0" r="4" fill="#2a78d6"/>
+<text x="303.0" y="428.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">food-delivery</text>
+<rect x="282.0" y="446.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="293.0" cy="459.0" r="4" fill="#2a78d6"/>
+<text x="303.0" y="463.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">admin-order</text>
+<rect x="282.0" y="481.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="293.0" cy="494.0" r="4" fill="#2a78d6"/>
+<text x="303.0" y="498.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">execute</text>
+<rect x="282.0" y="516.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#eb6834" stroke-width="1.6"/>
+<circle cx="293.0" cy="529.0" r="4" fill="#eb6834"/>
+<text x="303.0" y="533.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">voucher</text>
+<rect x="786.0" y="166.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="797.0" cy="179.0" r="4" fill="#2a78d6"/>
+<text x="807.0" y="183.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">payment</text>
+<rect x="786.0" y="201.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="797.0" cy="214.0" r="4" fill="#2a78d6"/>
+<text x="807.0" y="218.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">consign</text>
+<rect x="786.0" y="236.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="797.0" cy="249.0" r="4" fill="#2a78d6"/>
+<text x="807.0" y="253.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">contacts</text>
+<rect x="786.0" y="271.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="797.0" cy="284.0" r="4" fill="#2a78d6"/>
+<text x="807.0" y="288.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">user</text>
+<rect x="786.0" y="306.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="797.0" cy="319.0" r="4" fill="#2a78d6"/>
+<text x="807.0" y="323.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">travel2</text>
+<rect x="786.0" y="341.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="797.0" cy="354.0" r="4" fill="#2a78d6"/>
+<text x="807.0" y="358.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">food</text>
+<rect x="786.0" y="376.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="797.0" cy="389.0" r="4" fill="#2a78d6"/>
+<text x="807.0" y="393.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">assurance</text>
+<rect x="786.0" y="411.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="797.0" cy="424.0" r="4" fill="#2a78d6"/>
+<text x="807.0" y="428.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">security</text>
+<rect x="786.0" y="446.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="797.0" cy="459.0" r="4" fill="#2a78d6"/>
+<text x="807.0" y="463.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">notification</text>
+<rect x="1038.0" y="218.5" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1049.0" cy="231.5" r="4" fill="#2a78d6"/>
+<text x="1059.0" y="235.5" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">consign-price</text>
+<rect x="1038.0" y="253.5" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1049.0" cy="266.5" r="4" fill="#2a78d6"/>
+<text x="1059.0" y="270.5" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">auth</text>
+<rect x="1038.0" y="288.5" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1049.0" cy="301.5" r="4" fill="#2a78d6"/>
+<text x="1059.0" y="305.5" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">travel</text>
+<rect x="1038.0" y="323.5" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1049.0" cy="336.5" r="4" fill="#2a78d6"/>
+<text x="1059.0" y="340.5" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">delivery</text>
+<rect x="1038.0" y="358.5" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1049.0" cy="371.5" r="4" fill="#2a78d6"/>
+<text x="1059.0" y="375.5" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">train-food</text>
+<rect x="1038.0" y="393.5" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1049.0" cy="406.5" r="4" fill="#2a78d6"/>
+<text x="1059.0" y="410.5" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">station-food</text>
+<rect x="1290.0" y="271.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1301.0" cy="284.0" r="4" fill="#2a78d6"/>
+<text x="1311.0" y="288.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">verification-code</text>
+<rect x="1290.0" y="306.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1301.0" cy="319.0" r="4" fill="#2a78d6"/>
+<text x="1311.0" y="323.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">basic</text>
+<rect x="1290.0" y="341.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1301.0" cy="354.0" r="4" fill="#2a78d6"/>
+<text x="1311.0" y="358.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">seat</text>
+<rect x="1542.0" y="201.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1553.0" cy="214.0" r="4" fill="#2a78d6"/>
+<text x="1563.0" y="218.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">price</text>
+<rect x="1542.0" y="236.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1553.0" cy="249.0" r="4" fill="#2a78d6"/>
+<text x="1563.0" y="253.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">config</text>
+<rect x="1542.0" y="271.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1553.0" cy="284.0" r="4" fill="#2a78d6"/>
+<text x="1563.0" y="288.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">train</text>
+<rect x="1542.0" y="306.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1553.0" cy="319.0" r="4" fill="#2a78d6"/>
+<text x="1563.0" y="323.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">route</text>
+<rect x="1542.0" y="341.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1553.0" cy="354.0" r="4" fill="#2a78d6"/>
+<text x="1563.0" y="358.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">station</text>
+<rect x="1542.0" y="376.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1553.0" cy="389.0" r="4" fill="#2a78d6"/>
+<text x="1563.0" y="393.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">order</text>
+<rect x="1542.0" y="411.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="1553.0" cy="424.0" r="4" fill="#2a78d6"/>
+<text x="1563.0" y="428.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">order-other</text>
+<rect x="534.0" y="271.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="545.0" cy="284.0" r="4" fill="#2a78d6"/>
+<text x="555.0" y="288.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">route-plan</text>
+<rect x="534.0" y="306.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="545.0" cy="319.0" r="4" fill="#2a78d6"/>
+<text x="555.0" y="323.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">inside-payment</text>
+<rect x="534.0" y="341.0" width="160" height="26" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="545.0" cy="354.0" r="4" fill="#2a78d6"/>
+<text x="555.0" y="358.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">preserve</text>
+<rect x="30.0" y="266.5" width="160" height="48" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.6"/>
+<circle cx="41.0" cy="290.5" r="4" fill="#2a78d6"/>
+<text x="51.0" y="282.5" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600">gateway</text>
+<text x="51.0" y="297.5" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="start" font-weight="normal">routes to 38 services (config)</text>
+<rect x="30.0" y="323.5" width="160" height="48" rx="6" fill="#ffffff" stroke="#eda100" stroke-width="1.6"/>
+<circle cx="41.0" cy="347.5" r="4" fill="#eda100"/>
+<text x="51.0" y="339.5" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600">ui-dashboard</text>
+<text x="51.0" y="354.5" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#52514e" text-anchor="start" font-weight="normal">routes to 1 service (config)</text>
+<text x="30.0" y="591.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#52514e" text-anchor="start" font-weight="600">No calls to or from other services in code:</text>
+<text x="30.0" y="611.0" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">avatar, common, news, ticket-office</text>
+</svg>
