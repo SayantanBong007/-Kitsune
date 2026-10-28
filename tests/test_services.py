@@ -247,3 +247,75 @@ def test_generated_marker_only_counts_in_comments(tmp_path):
     mention = _write(tmp_path / "c.py", 'MARK = "@generated"   # what generated files contain\n')
     assert _is_generated(gen) and _is_generated(java)
     assert not _is_generated(mention)
+
+
+def test_feign_client_is_a_call_not_an_offer(tmp_path):
+    java = "src/main/java"
+    _write(tmp_path / "customers" / "pom.xml", "<project><artifactId>customers</artifactId></project>")
+    _write(tmp_path / "customers" / "src/main/resources/application.yml",
+           "spring:\n  application:\n    name: customers-service\n")
+    _write(tmp_path / "customers" / java / "OwnerResource.java", """
+        @RestController
+        @RequestMapping("/owners")
+        public class OwnerResource {
+            @GetMapping("/{ownerId}") public Owner findOwner(@PathVariable int ownerId) { return null; }
+        }
+    """)
+    _write(tmp_path / "visits" / "pom.xml", "<project><artifactId>visits</artifactId></project>")
+    _write(tmp_path / "visits" / java / "CustomersClient.java", """
+        @FeignClient(name = "customers-service", path = "/owners")
+        public interface CustomersClient {
+            @GetMapping("/{id}") Owner getOwner(@PathVariable("id") int id);
+        }
+    """)
+    services = discover_services(str(tmp_path))
+    contracts = extract_contracts(services)
+    assert not any(o.service == "visits" for o in contracts.offers)    # the client serves nothing
+    links = _links(tmp_path)
+    assert ("visits", "customers-service", "http", "GET", "/owners/{*}", "confirmed") in links
+
+
+def test_spring_cloud_config_server_context_path_oauth2_and_routes(tmp_path):
+    """PiggyMetrics-style: per-service config served by a config server (shared/<app>.yml),
+    a context-path prefix, an external Feign API, OAuth2 settings, and a Zuul gateway."""
+    java = "src/main/java"
+    shared = tmp_path / "config" / "src/main/resources/shared"
+    _write(tmp_path / "config" / "pom.xml", "<project><artifactId>config</artifactId></project>")
+    _write(shared / "application.yml",
+           "security:\n  oauth2:\n    resource:\n      user-info-uri: http://auth-service:5000/uaa/users/current\n")
+    _write(shared / "account-service.yml", "server:\n  servlet:\n    context-path: /accounts\n")
+    _write(shared / "statistics-service.yml",
+           "server:\n  servlet:\n    context-path: /statistics\nrates:\n  url: https://api.exchangeratesapi.io\n")
+    _write(shared / "gateway.yml",
+           "spring:\n  cloud:\n    config:\n      uri: http://config:8888\n"
+           "zuul:\n  routes:\n    accounts:\n      path: /accounts/**\n      serviceId: account-service\n")
+    for name in ("account-service", "statistics-service", "auth-service", "gateway"):
+        _write(tmp_path / name / "pom.xml", f"<project><artifactId>{name}</artifactId></project>")
+        _write(tmp_path / name / "src/main/resources/bootstrap.yml",
+               f"spring:\n  application:\n    name: {name}\n  cloud:\n    config:\n      uri: http://config:8888\n")
+    _write(tmp_path / "auth-service" / java / "UserController.java", """
+        @RestController
+        @RequestMapping("/users")
+        public class UserController { @GetMapping("/current") public Principal get(Principal p) { return p; } }
+    """)
+    _write(tmp_path / "account-service" / java / "AccountController.java", """
+        @RestController
+        public class AccountController { @GetMapping("/{name}") public Account get(@PathVariable String name) { return null; } }
+    """)
+    _write(tmp_path / "statistics-service" / java / "Clients.java", """
+        @EnableResourceServer
+        public class Config {}
+        @FeignClient(name = "account-service")
+        interface AccountClient { @GetMapping("/accounts/{name}") Account get(@PathVariable("name") String n); }
+        @FeignClient(url = "${rates.url}", name = "rates-client")
+        interface RatesClient { @GetMapping("/latest") Rates latest(); }
+    """)
+    links = _links(tmp_path)
+    pairs = {(c, s) for c, s, *_ in links}
+    # context-path from the config server puts AccountController under /accounts
+    assert ("statistics-service", "account-service", "http", "GET", "/accounts/{*}", "confirmed") in links
+    assert ("gateway", "account-service") in pairs           # Zuul route served by the config server
+    assert ("gateway", "config") not in pairs                # spring.cloud.config.uri is a setting
+    assert ("statistics-service", "auth-service") in pairs   # OAuth2 resource server → user-info-uri
+    assert ("account-service", "auth-service") not in pairs  # no OAuth2 in its code
+    assert len([l for l in links if l[0] == "statistics-service"]) == 2   # external rates API: no link

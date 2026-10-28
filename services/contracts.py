@@ -50,6 +50,13 @@ _GENERATED_MARK = re.compile(rb"^[ \t]*(//|#|/?\*|<!--|--)[^\n]{0,40}?(Code gene
 _ASSET_DIR = re.compile(r"(^|/)(public|static|assets|www|wwwroot)(/|$)|\.min\.js$|\.bundle\.js$")
 _TEST_DIR = re.compile(r"(^|/)(test|tests|__tests__|spec|testdata)(/|$)|_test\.go$|Test\w*\.java$|"
                        r"\.(test|spec)\.[jt]sx?$|(^|/)test_\w+\.py$")
+# Gateway route tables (keys relaxed: lower-case, no - or _): Spring Cloud Gateway and Zuul
+_ROUTE_KEY = re.compile(r"^(spring\.cloud\.gateway\.(server\.(webflux|webmvc)\.|mvc\.)?routes\[\d+\]\.uri"
+                        r"|zuul\.routes\.[^.]+\.(url|serviceid))$")
+# Spring Security OAuth2 settings that the framework itself calls at run time
+_OAUTH2_KEY = re.compile(r"(userinfouri|accesstokenuri|tokeninfouri|jwkseturi|issueruri)$")
+_OAUTH2_CODE = re.compile(r"@Enable(ResourceServer|OAuth2Client|OAuth2Sso)\b|ResourceServerConfigurerAdapter|"
+                          r"oauth2ResourceServer|oauth2Login|oauth2Client|OAuth2RestTemplate")
 # Calls that send a request: their result is a response, not a URL
 _REQUEST_CALLS = {"exchange", "getForObject", "postForObject", "getForEntity", "postForEntity",
                   "patchForObject", "execute", "retrieve", "urlopen", "newCall", "Do", "fetch"}
@@ -808,34 +815,134 @@ class ContractExtractor:
 
     # ── extraction ───────────────────────────────────────────────────────
 
+    # ── Spring configuration (own files + Spring Cloud Config server) ──────
+
+    def _config_files(self, service: str) -> list[Path]:
+        """A service's Spring config: its own application*/bootstrap* files, plus what a
+        Spring Cloud Config server serves it — `<app-name>.yml` from the config server's
+        repository and that repository's shared `application.yml` (lowest priority first)."""
+        if not hasattr(self, "_config_cache"):
+            self._config_cache = self._find_config_files()
+        return self._config_cache.get(service, [])
+
+    def _find_config_files(self) -> dict[str, list[Path]]:
+        own: dict[str, list[Path]] = {}
+        candidates: list[Path] = []
+        for name, root in self.services.items():
+            files = []
+            for pattern in ("*.yml", "*.yaml", "*.properties"):
+                for cfg in root.rglob(pattern):
+                    rel = cfg.relative_to(root).parts
+                    if any(p in _SKIP_DIRS or p == "test" for p in rel):
+                        continue
+                    candidates.append(cfg)
+                    if re.match(r"(application|bootstrap)([-.]|$)", cfg.stem):
+                        files.append(cfg)
+            own[name] = files
+        # A config repository: a folder holding config files named after 2+ of our services
+        by_dir: dict[Path, list[Path]] = {}
+        for cfg in candidates:
+            by_dir.setdefault(cfg.parent, []).append(cfg)
+        shared_all: list[Path] = []
+        per_service: dict[str, list[Path]] = {}
+        for folder, files in by_dir.items():
+            named = [(f, self.hosts[f.stem.lower()]) for f in files if f.stem.lower() in self.hosts
+                     and not str(f).startswith(str(self.services[self.hosts[f.stem.lower()]]) + os.sep)]
+            if len({s for _, s in named}) < 2:
+                continue
+            for f, s in named:
+                per_service.setdefault(s, []).append(f)
+            shared_all += [f for f in files if f.stem == "application"]
+        return {name: shared_all + own[name] + per_service.get(name, []) for name in self.services}
+
+    def _properties(self, service: str) -> list[tuple[str, str, Path]]:
+        """(relaxed key, value, file) for every scalar in the service's config, keys flattened
+        and normalised like Spring's relaxed binding: server.servlet.context-path →
+        server.servlet.contextpath."""
+        if not hasattr(self, "_props_cache"):
+            self._props_cache = {}
+        if service in self._props_cache:
+            return self._props_cache[service]
+        rows = []
+
+        def flatten(prefix, value, cfg):
+            if isinstance(value, dict):
+                for k, v in value.items():
+                    flatten(f"{prefix}.{k}" if prefix else str(k), v, cfg)
+            elif isinstance(value, list):                    # routes[0].uri, like Spring
+                for i, v in enumerate(value):
+                    flatten(f"{prefix}[{i}]", v, cfg)
+            elif isinstance(value, (str, int, float)):
+                rows.append((re.sub(r"[-_]", "", prefix.lower()), str(value), cfg))
+
+        for cfg in self._config_files(service):
+            text = cfg.read_text(encoding="utf-8", errors="ignore")
+            if cfg.suffix == ".properties":
+                for line in text.splitlines():
+                    m = re.match(r"\s*([\w.\-\[\]]+)\s*[=:]\s*(.*?)\s*$", line)
+                    if m and not line.lstrip().startswith(("#", "!")):
+                        rows.append((re.sub(r"[-_]", "", m.group(1).lower()), m.group(2), cfg))
+                continue
+            try:
+                import yaml
+                for doc in yaml.safe_load_all(text):
+                    if isinstance(doc, dict) and not (doc.get("spring") or {}).get("profiles"):
+                        flatten("", doc, cfg)   # profile-specific documents are skipped
+            except Exception:
+                continue
+        self._props_cache[service] = rows
+        return rows
+
+    def _context_path(self, service: str) -> str:
+        """server.servlet.context-path (Boot 2+), server.context-path (Boot 1) or the WebFlux
+        base path: every route the service serves sits under it."""
+        value = ""
+        for key, v, _ in self._properties(service):
+            if key in ("server.servlet.contextpath", "server.contextpath", "spring.webflux.basepath"):
+                value = v
+        value = re.sub(r"\$\{[\w.-]+:([^}]*)\}", r"\1", value).strip()
+        return "/" + value.strip("/") if value.strip("/") and "$" not in value else ""
+
+    def _oauth2_links(self, service: str, out):
+        """Spring Security reads these URLs itself and calls them at run time (token
+        endpoint, user-info / JWK endpoints), so they are real dependencies — unlike an
+        arbitrary URL property. Only for services whose code enables OAuth2."""
+        if not any(_OAUTH2_CODE.search(f.source.decode("utf-8", "ignore") if isinstance(f.source, bytes)
+                                       else f.source) for f in self.files.get(service, [])):
+            return
+        seen = set()
+        for key, value, cfg in self._properties(service):
+            if not _OAUTH2_KEY.search(key):
+                continue
+            target, _, looks = parse_url(re.sub(r"\$\{[\w.-]+:([^}]*)\}", r"\1", value), self.hosts)
+            if looks and target and target != service and target not in seen:
+                seen.add(target)
+                out.calls.append(Call(service, "http", "ANY", "", target, str(cfg), 0,
+                                      "", "", f"route:oauth2 {key}"))
+
     def _config_routes(self, service: str, out):
         """API-gateway routes declared in config (Spring Cloud Gateway, Zuul):
-        `uri: lb://vets-service` → this service forwards requests to vets-service."""
-        root = self.services[service]
-        for cfg in list(root.rglob("application*.y*ml")) + list(root.rglob("application*.properties")) \
-                + list(root.rglob("bootstrap*.y*ml")):
-            if any(p in _SKIP_DIRS or p in ("test",) for p in cfg.relative_to(root).parts):
+        `uri: lb://vets-service` → this service forwards requests to vets-service.
+        The config may come from a Spring Cloud Config server (see _config_files)."""
+        # Only route tables: other URLs in the same file (spring.cloud.config.uri, a
+        # third-party API's url) are settings, not routes
+        for key, value, cfg in self._properties(service):
+            if not _ROUTE_KEY.match(key):
                 continue
-            text = cfg.read_text(encoding="utf-8", errors="ignore")
-            if not re.search(r"gateway|zuul", text, re.I):
-                continue   # a URL property in plain app config is not a call; only route tables are
             # Spring placeholders: lb://${CART_HOST:ts-cart-service} → the default
             # (or the service the variable names), as Spring would resolve it
-            text = re.sub(r"\$\{([\w.-]+)(?::([^}]*))?\}",
-                          lambda m: m.group(2) if m.group(2) is not None
-                          else self._env_host(m.group(1).upper().replace(".", "_"), service), text)
-            for m in re.finditer(r"(?:uri|url)\s*[:=]\s*(?:lb|https?)://([\w.-]+)", text):
-                target = self.hosts.get(m.group(1).lower().split(".")[0], "")
-                if target and target != service:
-                    line = text.count("\n", 0, m.start()) + 1
-                    out.calls.append(Call(service, "http", "ANY", "", target, str(cfg), line,
-                                          "", "", f"route:{m.group(0)}"))
-            for m in re.finditer(r"serviceId\s*[:=]\s*([\w.-]+)", text):   # Zuul (placeholder, see below)
-                target = self.hosts.get(m.group(1).lower(), "")
-                if target and target != service:
-                    line = text.count("\n", 0, m.start()) + 1
-                    out.calls.append(Call(service, "http", "ANY", "", target, str(cfg), line,
-                                          "", "", f"route:{m.group(0)}"))
+            value = re.sub(r"\$\{([\w.-]+)(?::([^}]*))?\}",
+                           lambda m: m.group(2) if m.group(2) is not None
+                           else self._env_host(m.group(1).upper().replace(".", "_"), service), value)
+            host = re.sub(r"^[a-z]+://", "", value.strip().lower())
+            host = re.split(r"[:/]", host)[0]
+            target = self.hosts.get(host, "") or self.hosts.get(host.split(".")[0], "")
+            if target and target != service:
+                text = cfg.read_text(encoding="utf-8", errors="ignore")
+                at = text.find(value.split("://")[-1].split(":")[0])
+                line = text.count("\n", 0, at) + 1 if at >= 0 else 0
+                out.calls.append(Call(service, "http", "ANY", "", target, str(cfg), line,
+                                      "", "", f"route:{key}={value}"))
 
     def _proxy_routes(self, service: str, out):
         """Reverse-proxy config shipped with a service (nginx): proxy_pass to other services."""
@@ -862,12 +969,21 @@ class ContractExtractor:
         for service in self.files:
             self._config_routes(service, out)
             self._proxy_routes(service, out)
+            self._oauth2_links(service, out)
         for service, files in self.files.items():
             for f in files:
                 self._http_offers(service, f, out)
                 self._calls(service, f, out)
                 self._queue_consumers(service, f, out)
             self._grpc_offers(service, files, grpc_impls.get(service, set()), out)
+        # server.servlet.context-path: a Spring service's routes all sit under it
+        for service in self.files:
+            prefix = self._context_path(service)
+            if prefix:
+                for o in out.offers:
+                    if o.service == service and o.kind == "http" and o.file.endswith((".java", ".kt")) \
+                            and not o.path.startswith(prefix + "/") and o.path != prefix:
+                        o.path = normalize_path(prefix + ("" if o.path == "/" else o.path))
         # de-duplicate
         out.offers = list({(o.service, o.kind, o.method, o.path, o.file, o.line): o
                            for o in out.offers}.values())
@@ -1002,11 +1118,17 @@ class ContractExtractor:
             if cls.type not in ("class_declaration", "interface_declaration"):
                 continue
             prefixes = [""]
+            feign = None    # @FeignClient interface: its mappings are calls to another service
             for name, args in self._annotations(f, cls):
                 if name == "RequestMapping":
                     vals = self._ann_values(service, f, args.get("value") or args.get("path"))
                     # Spring accepts "api/v1/x" as well as "/api/v1/x"
                     prefixes = ["/" + v.lstrip("/") for v in vals if v.replace("{*}", "").strip("/")] or [""]
+                elif name == "FeignClient":
+                    feign = self._feign_target(service, f, args)
+                    path = self._ann_values(service, f, args.get("path"))
+                    if path and path[0].replace("{*}", "").strip("/"):
+                        prefixes = ["/" + path[0].strip("/")]
             body = cls.child_by_field_name("body")
             for m in (body.named_children if body is not None else []):
                 if m.type != "method_declaration":
@@ -1024,8 +1146,30 @@ class ContractExtractor:
                     for prefix in prefixes:
                         for p in paths:
                             full = (prefix.rstrip("/") + "/" + p.lstrip("/")) if p else (prefix or "/")
-                            self._add_offer(out, service, f, m.start_point[0] + 1, "http", verb,
-                                            normalize_path(full))
+                            if feign is not None:
+                                target, label = feign
+                                # url = "${rates.url}" / a name we don't have: an outside API
+                                if target:
+                                    self._add_call(out, service, f, m.start_point[0] + 1, "http", verb,
+                                                   normalize_path(full), target,
+                                                   f"@FeignClient({label}) {verb} {full}")
+                            else:
+                                self._add_offer(out, service, f, m.start_point[0] + 1, "http", verb,
+                                                normalize_path(full))
+
+    def _feign_target(self, service, f, args) -> tuple[str, str]:
+        """(target service, label) of @FeignClient(name = "customers-service" | url = "http://...")."""
+        for key in ("name", "value", "serviceId"):
+            vals = self._ann_values(service, f, args.get(key))
+            if vals and vals[0].replace("{*}", ""):
+                raw = re.sub(r"\$\{[\w.-]+:([^}]*)\}", r"\1", vals[0])   # ${x:customers-service}
+                target = self.hosts.get(raw.lower(), "")
+                return (target if target != service else ""), raw
+        urls = self._ann_values(service, f, args.get("url"))
+        if urls and urls[0].replace("{*}", ""):
+            target, _, _ = parse_url(urls[0], self.hosts)
+            return (target if target != service else ""), urls[0]
+        return "", "?"
 
     def _python_route(self, service, f, dec, out):
         call = next((c for c in dec.named_children if c.type == "call"), None)

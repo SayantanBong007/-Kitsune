@@ -9,7 +9,8 @@
 | **Who it is for** | Engineers, reviewers, architects and AI coding agents |
 | **What it answers** | "Where is X?", "What calls X?", "What breaks if I change X?", "How does payment work?", "Which services depend on cart?" |
 | **Where it runs** | A laptop (no setup), or shared servers for a team (Qdrant + Neo4j) |
-| **Languages** | Python, Java, Go, JavaScript, TypeScript, C, C++, Rust |
+| **Languages** | Python, Java, Go, JavaScript, TypeScript, C, C++, Rust; optionally Kotlin, C#, PHP |
+| **Ways to use it** | Python API, the `kitsune` command line, or (experimental) AI agents via MCP |
 
 **Contents:**
 1. [Why the name Kitsune](#1-why-the-name-kitsune)
@@ -283,7 +284,7 @@ flowchart LR
 Every number below was measured. The correct answers were written by hand from the source
 code before Kitsune was run.
 
-### Many services: five public systems
+### Many services: six public systems
 
 | System | Shape | Links: precision / recall | First run, before any fixes |
 |---|---|---|---|
@@ -292,6 +293,12 @@ code before Kitsune was run.
 | Spring PetClinic Microservices | 8 services · Spring Cloud gateway | **100% / 100%** | 0%, kept unseen |
 | Robot Shop | 12 services · 5 languages · HTTP + AMQP + nginx | **100% / 100%** | 17%, kept unseen |
 | **Train Ticket** ([report](TRAIN_TICKET_REPORT.md)) | 47 services · Spring RestTemplate + RabbitMQ + gateway | **100% / 100%** | 62%, kept unseen (80% precision) |
+| **PiggyMetrics** | 10 services · Spring Cloud: Feign, Zuul, config server, OAuth2 | **100% / 60%** · service edges 100% | 0% confirmed (60% possible) and 1 wrong link, kept unseen |
+
+*PiggyMetrics' two missing links are calls whose URL reaches a custom class through a Spring
+Boot properties bean (`sso.getUserInfoUri()`). Kitsune doesn't model Spring property binding
+yet. The service-level dependency (account/statistics → auth) is still found, through the
+OAuth2 configuration.*
 
 - **No wrong links:** 0 links to services that must not be connected.
 - **Impact questions:** "who is affected if X changes" is right in all five systems.
@@ -327,13 +334,21 @@ CPU. Re-indexing only touches changed files.
 
 | Today's limit | Plan |
 |---|---|
-| Largest tested system is about 1,200 chunks; CPU embedding is the bottleneck | Scale test on a large monorepo; GPU or faster embedding |
-| Keyword index and lore are local files | Move both into the shared servers |
+| A brand-new code style starts low (blind first runs: 0–62% recall) | Same loop as Train Ticket and PiggyMetrics: blind run → general fix → regression check, or teach through the lore |
+| CPU embedding is the bottleneck (no GPU used) | `KITSUNE_EMBED_MAX_TOKENS=256` (32% faster, same eval scores); a GPU build of PyTorch |
+| URLs passed through framework property beans (`sso.getUserInfoUri()`) | Model Spring `@ConfigurationProperties` binding |
+| Kotlin, C# and PHP are parsed, but their web frameworks' routes and HTTP clients (ASP.NET, Ktor, Laravel) aren't read for service links | Add those frameworks to contract extraction |
+| Kotlin *class-level* annotations aren't read (grammar quirk); method annotations are | Grammar workaround |
 | Search can't yet be limited to one service | Service filter on search |
-| PHP, Kotlin, C# not yet parsed (C# gRPC services still link by contract) | Add tree-sitter grammars |
-| Java enums are not chunked | Add to the Java chunker |
-| URLs known only at run time | Reported as *possible*; taught through the lore |
 | AI-agent access (MCP server) is experimental | Stabilise and release |
+
+**Done since the first version of this guide:**
+- **Sharing:** the keyword index and lore are on the shared servers.
+- **Tooling:** a `kitsune` command line, `pip` packaging, and CI with integration tests.
+- **Dependency injection:** `@Qualifier` and `@Primary`.
+- **Spring Cloud:** Feign clients, Spring Cloud Config server files, context paths and OAuth2 dependencies.
+- **Parsing:** Java enums, and optional Kotlin, C# and PHP.
+- **Safety:** strict server mode (`KITSUNE_REQUIRE_SERVERS`).
 
 ---
 

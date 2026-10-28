@@ -84,14 +84,25 @@ def split_callee(callee_text: str) -> tuple[str, str]:
 
 def call_ref(node: Node, source: bytes) -> str | None:
     """Call site as "receiver|name", or None if the callee isn't a plain name."""
-    if node.type == "method_invocation":  # Java
+    if node.type in ("method_invocation", "member_call_expression",
+                     "nullsafe_member_call_expression"):  # Java a.b(), PHP $a->b()
         receiver = _text(node.child_by_field_name("object"), source)
+        name = _text(node.child_by_field_name("name"), source)
+    elif node.type == "scoped_call_expression":           # PHP Foo::bar()
+        receiver = _text(node.child_by_field_name("scope"), source)
         name = _text(node.child_by_field_name("name"), source)
     else:
         callee = node.child_by_field_name("function")
+        if callee is None and node.named_children:
+            # Kotlin: call_expression(navigation_expression | identifier, value_arguments)
+            first = node.named_children[0]
+            callee = first if first.type in ("navigation_expression", "identifier",
+                                             "simple_identifier") else None
         if callee is None:
             return None
         receiver, name = split_callee(_text(callee, source))
+    # PHP: $this->repo → this.repo, so receivers read the same in every language
+    receiver = receiver.replace("$", "").replace("->", ".").replace("?.", ".")
     if len(name) < 2 or (name.startswith("__") and name.endswith("__")):
         return None
     receiver = re.sub(r"\s+", "", receiver)
@@ -283,6 +294,62 @@ def extract_field_types(definition: Node, source: bytes) -> dict[str, str]:
 
 
 # ── Imports ───────────────────────────────────────────────────────────────────
+
+_BEAN_ANNOTATIONS = {"Service", "Component", "Repository", "Controller", "RestController"}
+
+
+def _annotations(node: Node | None, source: bytes) -> list[tuple[str, str]]:
+    """(name, first string argument) for each Java annotation on a declaration."""
+    out = []
+    for mods in (c for c in (node.children if node is not None else []) if c.type == "modifiers"):
+        for a in mods.children:
+            if a.type not in ("annotation", "marker_annotation"):
+                continue
+            name = _text(a.child_by_field_name("name"), source).split(".")[-1]
+            args = a.child_by_field_name("arguments")
+            value = re.search(r'"([^"]*)"', _text(args, source)) if args is not None else None
+            out.append((name, value.group(1) if value else ""))
+    return out
+
+
+def extract_di_facts(definition: Node, source: bytes) -> dict:
+    """Spring bean facts of a Java class, for choosing between several beans of one type:
+    its bean name (@Service("stripe") or the class name in lowerCamelCase), whether it
+    is @Primary, and @Qualifier("...") on its fields and constructor parameters."""
+    if definition.type not in ("class_declaration", "record_declaration"):
+        return {}
+    anns = _annotations(definition, source)
+    facts: dict = {}
+    bean = next((v for n, v in anns if n in _BEAN_ANNOTATIONS), None)
+    if bean is not None:
+        cls = _text(definition.child_by_field_name("name"), source)
+        facts["bean"] = bean or (cls[:1].lower() + cls[1:])
+    if any(n == "Primary" for n, _ in anns):
+        facts["primary"] = True
+    qualifiers = {}
+    for n in _walk_nodes(definition):
+        if n.type == "field_declaration":
+            q = next((v for name, v in _annotations(n, source) if name == "Qualifier" and v), None)
+            if q:
+                for d in n.children:
+                    if d.type == "variable_declarator":
+                        qualifiers[_text(d.child_by_field_name("name"), source)] = q
+        elif n.type == "formal_parameter":
+            q = next((v for name, v in _annotations(n, source) if name == "Qualifier" and v), None)
+            if q:   # constructor injection: the parameter usually becomes a same-named field
+                qualifiers[_text(n.child_by_field_name("name"), source)] = q
+    if qualifiers:
+        facts["qualifiers"] = qualifiers
+    return facts
+
+
+def _walk_nodes(node: Node):
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        yield n
+        stack.extend(n.children)
+
 
 def extract_import_map(root: Node, source: bytes) -> dict[str, str]:
     """Local name → module path for a file's imports."""

@@ -6,6 +6,7 @@ networkx>=3.0
 neo4j>=5.0                  # optional (falls back to NetworkX)
 openai>=1.30
 python-dotenv>=1.0
+pyyaml>=6.0                 # Spring config (routes, context-path)
 numpy
 tree-sitter>=0.22
 tree-sitter-python>=0.21
@@ -16,3 +17,5 @@ tree-sitter-cpp>=0.22
 tree-sitter-go>=0.21
 tree-sitter-java>=0.21
 tree-sitter-rust>=0.21
+# Optional extra languages (loaded only when installed):
+#   pip install tree-sitter-kotlin tree-sitter-c-sharp tree-sitter-php

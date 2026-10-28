@@ -51,6 +51,23 @@ LANGUAGE_NAMES: dict[str, str] = {
     ".go": "go", ".java": "java", ".rs": "rust",
 }
 
+
+def _optional_language(module: str, attr: str, extensions: tuple[str, ...], name: str):
+    """Register a grammar only if its package is installed (pip install tree-sitter-kotlin ...)."""
+    try:
+        mod = __import__(module)
+        lang = Language(getattr(mod, attr)())
+    except Exception:
+        return
+    for ext in extensions:
+        LANGUAGES[ext] = lang
+        LANGUAGE_NAMES[ext] = name
+
+
+_optional_language("tree_sitter_kotlin", "language", (".kt", ".kts"), "kotlin")
+_optional_language("tree_sitter_c_sharp", "language", (".cs",), "csharp")
+_optional_language("tree_sitter_php", "language_php", (".php",), "php")
+
 # All supported extensions (used by the indexer)
 SUPPORTED_EXTENSIONS = tuple(LANGUAGES.keys())
 
@@ -74,9 +91,14 @@ FUNCTION_NODE_TYPES = {
 
 CLASS_NODE_TYPES = {
     "class_definition",           # Python
-    "class_declaration",          # JS/TS/Java/C++
+    "class_declaration",          # JS/TS/Java/C++/Kotlin/C#/PHP
     "class_specifier",            # C++
     "impl_item",                  # Rust
+    "enum_declaration",           # Java/C#/TS: enums carry methods and constants
+    "record_declaration",         # Java 16+ / C#
+    "object_declaration",         # Kotlin: object Foo { ... }
+    "trait_declaration",          # PHP
+    "struct_declaration",         # C#
 }
 
 STRUCT_NODE_TYPES = {
@@ -102,7 +124,10 @@ WRAPPER_NODE_TYPES = {
 CHUNK_NODE_TYPES = FUNCTION_NODE_TYPES | CLASS_NODE_TYPES | STRUCT_NODE_TYPES
 
 # Node types that represent function/method calls
-CALL_NODE_TYPES = {"call", "call_expression", "method_invocation"}
+CALL_NODE_TYPES = {"call", "call_expression", "method_invocation",
+                   "invocation_expression",                          # C#
+                   "member_call_expression", "nullsafe_member_call_expression",  # PHP $a->b()
+                   "function_call_expression", "scoped_call_expression"}         # PHP f(), A::b()
 
 # Node types that represent inheritance/base classes
 INHERITANCE_NODE_TYPES = {

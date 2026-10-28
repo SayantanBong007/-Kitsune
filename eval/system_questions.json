@@ -2094,6 +2094,147 @@
           ]
         }
       ]
+    },
+    "piggymetrics": {
+      "source": "external/piggymetrics",
+      "upstream": "https://github.com/sqshq/piggymetrics @ 6bb2cf9 (Spring Cloud, Feign, Zuul)",
+      "held_out": "Ground truth written independently before Kitsune was run on this system (2026-10-29).",
+      "links": [
+        [
+          "account-service",
+          "auth-service",
+          "http",
+          "POST",
+          "/uaa/users"
+        ],
+        [
+          "account-service",
+          "statistics-service",
+          "http",
+          "PUT",
+          "/statistics/{*}"
+        ],
+        [
+          "notification-service",
+          "account-service",
+          "http",
+          "GET",
+          "/accounts/{*}"
+        ],
+        [
+          "account-service",
+          "auth-service",
+          "http",
+          "GET",
+          "/uaa/users/current"
+        ],
+        [
+          "statistics-service",
+          "auth-service",
+          "http",
+          "GET",
+          "/uaa/users/current"
+        ]
+      ],
+      "runtime_edges": [
+        [
+          "gateway",
+          "auth-service",
+          "http"
+        ],
+        [
+          "gateway",
+          "account-service",
+          "http"
+        ],
+        [
+          "gateway",
+          "statistics-service",
+          "http"
+        ],
+        [
+          "gateway",
+          "notification-service",
+          "http"
+        ],
+        [
+          "account-service",
+          "auth-service",
+          "http"
+        ],
+        [
+          "statistics-service",
+          "auth-service",
+          "http"
+        ],
+        [
+          "notification-service",
+          "auth-service",
+          "http"
+        ]
+      ],
+      "notes": "SERVICES (names from spring.application.name in each module's src/main/resources/bootstrap.yml): account-service, auth-service, config (no spring.application.name declared -> folder name 'config'; Spring Cloud Config Server), gateway (Zuul), monitoring (Hystrix dashboard; a Spring Boot app so kept), notification-service, registry (Eureka server), statistics-service, turbine-stream-service. Skipped: mongodb (Dockerfile + init.sh + dump, not a Spring app). Root pom.xml is the aggregator parent, not a service. Context paths from config/src/main/resources/shared/<svc>.yml server.servlet.context-path: account-service=/accounts, auth-service=/uaa, statistics-service=/statistics, notification-service=/notifications. PATTERNS: (1) Feign clients with name=<serviceId> and @RequestMapping(method, value), no class-level prefix; the Feign paths already include the target's servlet context-path. account-service AuthServiceClient POST /uaa/users -> auth-service UserController @RequestMapping('/users') POST (context /uaa): verified. account-service StatisticsServiceClient PUT /statistics/{accountName} -> StatisticsController PUT /{accountName} (context /statistics): verified; has a Hystrix fallback class. notification-service AccountServiceClient GET /accounts/{accountName} -> AccountController GET /{name} (context /accounts): verified; used by NotificationServiceImpl backup job. All three clients are actually invoked from service impls. (2) EXTERNAL Feign client: statistics-service ExchangeRatesClient @FeignClient(url='${rates.url}', name='rates-client') GET /latest, rates.url=https://api.exchangeratesapi.io (shared/statistics-service.yml) -> external API, NOT a link; 'rates-client' is not a service. Forbidden pair statistics-service->account-service added for it (account-service holds the account money/currency data, the nearest-looking internal target). (3) Zuul routes in config/src/main/resources/shared/gateway.yml: /uaa/** -> auth-service (by url http://auth-service:5000), /accounts/**, /statistics/**, /notifications/** -> serviceId routes, stripPrefix false -> runtime_edges gateway->each of the 4. (4) OAuth2: shared account/statistics/notification configs set security.oauth2.client.accessTokenUri=http://auth-service:5000/uaa/oauth/token (client_credentials; used by OAuth2FeignRequestInterceptor/OAuth2RestTemplate beans in each ResourceServerConfig), and shared/application.yml sets security.oauth2.resource.user-info-uri=http://auth-service:5000/uaa/users/current, which account- and statistics-service CustomUserInfoTokenServices call via OAuth2RestTemplate.getForEntity (notification-service uses Spring Boot's default UserInfoTokenServices). Per the rules these auth/infra calls are runtime_edges only (account/statistics/notification -> auth-service), not endpoint links, although GET /uaa/users/current does match UserController /current. A tool reporting GET /uaa/users/current or POST /uaa/oauth/token as a link is defensible but outside this key. (5) Config server: every Spring app's bootstrap.yml has spring.cloud.config.uri=http://config:8888 with fail-fast=true -> runtime_edges <svc>->config for all 8 non-config apps (registry included, it also bootstraps from config). (6) Eureka: shared/application.yml eureka.client.serviceUrl.defaultZone=http://registry:8761/eureka/ applies to apps with spring-cloud-starter-netflix-eureka-client: account, auth, gateway, notification, statistics, turbine-stream-service -> registry. monitoring has no eureka client dependency (excluded); registry has registerWithEureka/fetchRegistry false. EXCLUSIONS: no RestTemplate/WebClient calls to other services besides the OAuth2 ones above. No hand-written message-queue code: spring-cloud-starter-bus-amqp and spring-cloud-netflix-hystrix-stream deps (account/notification/statistics) plus turbine-stream-service (stream-rabbit) imply Hystrix metrics flow over RabbitMQ to turbine-stream-service, and the monitoring dashboard reads turbine's stream URL typed in the browser; these are dependency-only/implicit (no queue name in code or config, only spring.rabbitmq.host), so NO queue links and no edges to turbine-stream-service or from monitoring. rabbitmq and the mongodb hosts are not services. gateway static JS (launch.js) calls https://api.exchangeratesapi.io from the browser and calls /accounts, /statistics, /notifications, /uaa through the gateway from the browser: browser traffic, not service-to-service. notification-service SMTP (smtp.gmail.com) is external. Test code ignored. | Decided before Kitsune ran (2026-10-29): config-server and Eureka registry edges dropped, as in petclinic-ms (infrastructure, not application calls). The explicit OAuth2RestTemplate calls to auth-service GET /uaa/users/current (CustomUserInfoTokenServices, URL from the user-info-uri property) are counted as links.",
+      "forbidden": [
+        [
+          "statistics-service",
+          "account-service"
+        ],
+        [
+          "statistics-service",
+          "notification-service"
+        ],
+        [
+          "notification-service",
+          "statistics-service"
+        ],
+        [
+          "account-service",
+          "notification-service"
+        ],
+        [
+          "auth-service",
+          "account-service"
+        ],
+        [
+          "auth-service",
+          "statistics-service"
+        ]
+      ],
+      "impact": [
+        {
+          "q": "Which services are affected if account-service changes?",
+          "service": "account-service",
+          "expect": [
+            "gateway",
+            "notification-service"
+          ]
+        },
+        {
+          "q": "Which services are affected if auth-service changes?",
+          "service": "auth-service",
+          "expect": [
+            "account-service",
+            "gateway",
+            "notification-service",
+            "statistics-service"
+          ]
+        },
+        {
+          "q": "Which services are affected if notification-service changes?",
+          "service": "notification-service",
+          "expect": [
+            "gateway"
+          ]
+        },
+        {
+          "q": "Which services are affected if statistics-service changes?",
+          "service": "statistics-service",
+          "expect": [
+            "account-service",
+            "gateway"
+          ]
+        }
+      ]
     }
   }
 }

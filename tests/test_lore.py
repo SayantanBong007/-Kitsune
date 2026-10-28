@@ -153,3 +153,17 @@ def test_engine_remembers_lessons_across_reindex(tmp_path):
     engine.index_system(str(root))             # lesson is applied again on re-index
     assert [l for l in engine.get_service_links("cart", "in") if l["confidence"] == "confirmed"]
     assert engine.kitsune_age()["lessons"] > first["lessons"]
+
+
+def test_merge_keeps_what_both_sides_learned():
+    a, b = Lore.__new__(Lore), Lore.__new__(Lore)
+    empty = lambda: {"version": 1, "systems": {}, "taught": {}, "observed": {}, "blind_spots": {}}  # noqa: E731
+    a.data, b.data = empty(), empty()
+    a.teach_host("s", "basket-api", "cart")
+    b.teach_env("s", "PAY_GW", "payment")
+    a.observe("env_suffix", "GATEWAY", "x/web")
+    b.observe("env_suffix", "GATEWAY", "y/orders")
+    merged = Lore.merge(a.data, b.data)
+    assert merged["taught"]["s"]["hosts"] == {"basket-api": "cart"}
+    assert merged["taught"]["s"]["env"] == {"PAY_GW": "payment"}
+    assert merged["observed"]["env_suffix"]["GATEWAY"] == ["x/web", "y/orders"]

@@ -31,6 +31,12 @@ The repository root *is* the `kitsune` package, so clone it into a folder named
 git clone https://github.com/SayantanBong007/-Kitsune.git kitsune
 ```
 
+Or install it as a package, which also gives you the `kitsune` command:
+
+```bash
+pip install ./kitsune                 # add [languages] for Kotlin, C# and PHP
+```
+
 ### 2. Configure Your API Key
 
 ```bash
@@ -68,6 +74,27 @@ context = engine.search_semantic("What does the payment flow look like?")
 impact = engine.get_impact_analysis("process_payment", max_depth=3)
 print(f"This change impacts {impact['total_impact']} functions")
 ```
+
+### 4. Or use the command line
+
+```bash
+kitsune index ./payments-api -n payments                 # one repository
+kitsune ask "What breaks if I change process_payment?" -n payments
+kitsune callers charge -n payments --depth 3
+
+kitsune index-system ./shop -n shop                      # many services: index and link them
+kitsune map -n shop                                      # which service calls which
+kitsune links --service cart --direction in -n shop      # who depends on cart
+kitsune callers OrderServiceImpl.create --cross-service -n shop   # follow HTTP/gRPC/queues too
+kitsune endpoint /api/orders --method POST -n shop       # every caller of an endpoint
+kitsune blind-spots -n shop                              # what it could not connect
+kitsune teach host basket-api cart -n shop               # teach once, remembered for the team
+kitsune age -n shop
+```
+
+Every command takes `--namespace/-n`, `--json` and `--data-dir` (default `~/.kitsune/data`).
+`python -m kitsune ...` works too. *Windows Git Bash rewrites arguments that start with `/`;
+use PowerShell, or set `MSYS_NO_PATHCONV=1`.*
 
 ---
 
@@ -161,6 +188,26 @@ and cached locally — no API key needed.
 |----------|----------|---------|-------------|
 | `HF_HUB_OFFLINE` | No | — | Set to `1` to force offline mode (cached model only) |
 | `TRANSFORMERS_OFFLINE` | No | — | Set to `1` to force offline mode |
+| `KITSUNE_EMBED_MAX_TOKENS` | No | model limit (512) | Embed only the first N tokens of each chunk. `256` indexed 32% faster on CPU with the same scores on the 44-question eval; recommended for large repos without a GPU |
+
+### Team Setup (shared servers)
+
+With `QDRANT_URL` and `NEO4J_URI` pointing at shared servers, the whole team works on **one**
+knowledge base:
+
+| What | Where it lives on a team setup |
+|---|---|
+| Code vectors | Qdrant (one collection per namespace) |
+| Keyword (BM25) index | Qdrant, collection `<namespace collection>_bm25`, so every machine gets the same keyword results. `KITSUNE_KEYWORD_STORE=local` forces a local file |
+| Graph + cross-service links | Neo4j (nodes tagged with the namespace) |
+| Lore (lessons, habits) | Neo4j node `:KitsuneLore`; concurrent saves are merged, never overwritten. `KITSUNE_LORE=<file>` forces a local file |
+
+**Security checklist:**
+- **Qdrant:** start the server with `QDRANT__SERVICE__API_KEY=<secret>` and give clients `QDRANT_API_KEY=<secret>`. Use `https://` URLs across machines.
+- **Neo4j:** set a strong `NEO4J_AUTH=neo4j/<password>` on the server, matching `NEO4J_PASSWORD` on clients. Use `neo4j+s://` (TLS) across machines.
+- **`KITSUNE_REQUIRE_SERVERS=1`:** Kitsune stops with an error if Qdrant or Neo4j can't be reached (wrong key, server down). Without it, it falls back to private local stores, which is fine on a laptop but would quietly split a team.
+- **Secrets:** keep keys in `.env`, which is git-ignored, and never commit them.
+- **Privacy:** code is embedded locally. Only the question and the selected code go to the LLM.
 
 ---
 
@@ -226,6 +273,9 @@ kitsune/
 | 🟨 JavaScript | `.js`, `.jsx` | | 🟦 C++ | `.cpp`, `.hpp`, `.cc` |
 | 🟦 TypeScript | `.ts`, `.tsx` | | 🐹 Go | `.go` |
 | ☕ Java | `.java` | | 🦀 Rust | `.rs` |
+
+**Optional** (loaded when the grammar is installed: `pip install tree-sitter-kotlin
+tree-sitter-c-sharp tree-sitter-php`): Kotlin `.kt`/`.kts`, C# `.cs`, PHP `.php`.
 
 Adding a new language requires only installing its tree-sitter package and adding one line
 to the language registry in `parser/treesitter_parser.py`.

@@ -30,6 +30,7 @@ from kitsune.parser.treesitter_parser import (
 )
 from kitsune.parser.semantics import (
     extract_call_refs,
+    extract_di_facts,
     extract_field_types,
     extract_import_map,
     extract_var_types,
@@ -72,7 +73,10 @@ def _node_type_to_chunk_type(node_type: str) -> str:
 _CALLEE_TAIL = re.compile(r"\?\.|\.")  # window.LF → LF
 
 CLASS_BODY_TYPES = ("block", "class_body", "declaration_list", "module",
-                    "field_declaration_list", "interface_body")
+                    "field_declaration_list", "interface_body",
+                    "enum_body", "enum_body_declarations", "enum_class_body")  # enums carry methods
+# Containers whose members are top-level definitions (C# namespaces, braced PHP namespaces)
+NAMESPACE_TYPES = ("namespace_declaration", "file_scoped_namespace_declaration", "namespace_definition")
 
 
 def _extend_comment_run(run: list[Node], comment: Node) -> list[Node]:
@@ -399,6 +403,7 @@ def chunk_file(file_path: str | Path, max_depth: int = MAX_RECURSION_DEPTH) -> l
         inherits = extract_inheritance(definition, source) if chunk_type == "class" else []
         decorators = extract_decorators(node, source)
         field_types = extract_field_types(definition, source) if chunk_type == "class" else {}
+        di = extract_di_facts(definition, source) if chunk_type == "class" else {}
 
         start_line = get_node_start_line(node)
         if comments:
@@ -423,6 +428,7 @@ def chunk_file(file_path: str | Path, max_depth: int = MAX_RECURSION_DEPTH) -> l
             call_refs=call_refs,
             var_types=var_types,
             field_types=field_types,
+            di=di,
         )
         chunks.append(chunk)
 
@@ -435,7 +441,10 @@ def chunk_file(file_path: str | Path, max_depth: int = MAX_RECURSION_DEPTH) -> l
             for child in definition.children:
                 if child.type in CLASS_BODY_TYPES:
                     pending: list[Node] = []
-                    for inner in child.children:
+                    # Java enums keep their methods one level down, after the constants
+                    members = [m for inner in child.children
+                               for m in (inner.children if inner.type == "enum_body_declarations" else [inner])]
+                    for inner in members:
                         if inner.type == "comment":
                             pending = _extend_comment_run(pending, inner)
                             continue
@@ -457,6 +466,14 @@ def chunk_file(file_path: str | Path, max_depth: int = MAX_RECURSION_DEPTH) -> l
             if child.type == "comment":
                 pending = _extend_comment_run(pending, child)
                 continue
+            if child.type in NAMESPACE_TYPES:
+                body = child.child_by_field_name("body")
+                if body is not None or child.type == "file_scoped_namespace_declaration":
+                    # namespace Shop.Orders { class ... }: its members are top-level definitions
+                    flush_module_nodes()
+                    walk_top_level((body or child).named_children, scope)
+                    module_chars = 0
+                    continue
             iife = _iife_body(child, source)
             is_definition = iife is None and _unwrap(child, source) is not None
             doc = _adjacent_comments(pending, child) if is_definition else []

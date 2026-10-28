@@ -87,6 +87,7 @@ class Chunk:
     var_types: dict[str, str] = field(default_factory=dict)  # variable → type name
     field_types: dict[str, str] = field(default_factory=dict)  # class field → type name
     import_map: dict[str, str] = field(default_factory=dict)  # local name → module (module chunks)
+    di: dict = field(default_factory=dict)  # Spring bean name / @Primary / @Qualifier per field
 
     def resolve_info(self) -> dict:
         """Everything the call resolver needs about this chunk."""
@@ -100,6 +101,7 @@ class Chunk:
             "scope": self.scope,
             "decorators": self.decorators,
             "service": self.service,
+            "di": self.di,
         }
 
     def __post_init__(self):

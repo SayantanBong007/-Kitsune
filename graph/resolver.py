@@ -119,6 +119,21 @@ class CallResolver:
 
     # ── Lookups ───────────────────────────────────────────────────────────
 
+    def _choose_beans(self, impls: list[str], src: dict, receiver: str) -> list[str]:
+        """Several beans implement the type: @Qualifier("x") on the field picks bean "x";
+        otherwise a @Primary bean wins; otherwise all stay (the call is ambiguous)."""
+        if len(impls) < 2:
+            return impls
+        di = lambda qn: (self.classes.get(qn, {}).get("resolve") or {}).get("di") or {}  # noqa: E731
+        cls = self._enclosing_class(src)
+        field_name = receiver.replace("->", ".").split(".")[-1]
+        wanted = di(cls).get("qualifiers", {}).get(field_name) if cls else None
+        if wanted:
+            named = [qn for qn in impls if di(qn).get("bean") == wanted]
+            if named:
+                return named
+        return [qn for qn in impls if di(qn).get("primary")] or impls
+
     def _is_method(self, d: dict) -> bool:
         return d["resolve"].get("scope", "") in self.classes
 
@@ -312,7 +327,7 @@ class CallResolver:
             prefer_impls = bool(self._implementations_of(class_qn, beans_only=True)) or not found
             if prefer_impls:
                 impl_methods = []
-                for impl_qn in self._implementations_of(class_qn):
+                for impl_qn in self._choose_beans(self._implementations_of(class_qn), src, receiver):
                     impl_methods.extend(m for m in self._methods_of(impl_qn, name)
                                         if m not in impl_methods)
                 if impl_methods:

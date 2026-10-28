@@ -122,6 +122,26 @@ class Lore:
             kept.append(link)
         return kept
 
+    @staticmethod
+    def merge(base: dict, mine: dict) -> dict:
+        """Combine a stored lore with this process's copy, losing nothing either side learned."""
+        out = json.loads(json.dumps(base))
+        for system, s in mine.get("systems", {}).items():
+            cur = out["systems"].setdefault(system, dict(s))
+            cur["runs"] = max(cur.get("runs", 0), s.get("runs", 0))
+            cur["first_seen"] = min(cur.get("first_seen", s.get("first_seen", "")), s.get("first_seen", ""))
+            cur["last_seen"] = max(cur.get("last_seen", ""), s.get("last_seen", ""))
+        for system, t in mine.get("taught", {}).items():
+            cur = out["taught"].setdefault(system, {"links": {}, "hosts": {}, "env": {}})
+            for kind in ("links", "hosts", "env"):
+                cur.setdefault(kind, {}).update(t.get(kind, {}))
+        for kind, values in mine.get("observed", {}).items():
+            cur = out["observed"].setdefault(kind, {})
+            for value, seen in values.items():
+                cur[value] = sorted(set(cur.get(value, [])) | set(seen))
+        out["blind_spots"].update(mine.get("blind_spots", {}))
+        return out
+
     # ── age ──────────────────────────────────────────────────────────────
 
     def age(self) -> dict:
@@ -139,3 +159,39 @@ class Lore:
             "habits_forming": {kind: sorted(v for v, seen in values.items() if len(seen) < EVIDENCE_NEEDED)
                                for kind, values in self.data["observed"].items()},
         }
+
+
+class SharedLore(Lore):
+    """The lore kept in Neo4j, so a lesson taught on one machine helps the whole team.
+
+    Saving reads the stored lore, merges this copy into it and writes it back in one
+    transaction; Neo4j's node lock makes concurrent saves queue up instead of
+    overwriting each other.
+    """
+
+    def __init__(self, driver, key: str = "global"):
+        self._driver = driver
+        self._key = key
+        self.path = Path(f"neo4j://KitsuneLore/{key}")
+        self.data = {"version": 1, "systems": {}, "taught": {}, "observed": {}, "blind_spots": {}}
+        with driver.session() as s:
+            row = s.run("MATCH (l:KitsuneLore {id: $id}) RETURN l.data AS data", id=key).single()
+        if row and row["data"]:
+            self.data.update(json.loads(row["data"]))
+
+    def save(self):
+        mine = self.data
+
+        def write(tx):
+            tx.run("MERGE (l:KitsuneLore {id: $id}) SET l.version = coalesce(l.version, 0) + 1", id=self._key)
+            row = tx.run("MATCH (l:KitsuneLore {id: $id}) RETURN l.data AS data", id=self._key).single()
+            stored = {"version": 1, "systems": {}, "taught": {}, "observed": {}, "blind_spots": {}}
+            if row and row["data"]:
+                stored.update(json.loads(row["data"]))
+            merged = Lore.merge(stored, mine)
+            tx.run("MATCH (l:KitsuneLore {id: $id}) SET l.data = $data",
+                   id=self._key, data=json.dumps(merged, sort_keys=True))
+            return merged
+
+        with self._driver.session() as s:
+            self.data = s.execute_write(write)

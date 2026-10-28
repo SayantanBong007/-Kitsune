@@ -96,7 +96,16 @@ class RepositoryKnowledgeEngine:
 
         self.graph_store = GraphStore(persist_path=os.path.join(data_dir, "graph.pkl"),
                                       namespace=self.namespace)
-        self.keyword_store = KeywordStore(persist_path=os.path.join(data_dir, "bm25_index.pkl"))
+        if os.getenv("KITSUNE_REQUIRE_SERVERS", "").lower() in ("1", "true", "yes"):
+            # A team setup must never quietly drop to private local stores (wrong API
+            # key, server down): everyone would think they share one index.
+            down = [n for n, fell_back in (("Qdrant (QDRANT_URL / QDRANT_API_KEY)", self.vector_store.using_fallback),
+                                           ("Neo4j (NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD)",
+                                            self.graph_store.use_fallback)) if fell_back]
+            if down:
+                raise RuntimeError("KITSUNE_REQUIRE_SERVERS is set but these are not reachable: "
+                                   + ", ".join(down))
+        self.keyword_store = self._make_keyword_store(data_dir)
         self.concept_store = ConceptStore(persist_path=os.path.join(data_dir, "concepts.json"))
 
         # Query cache — caches retrieval results for repeated/similar queries.
@@ -319,7 +328,7 @@ class RepositoryKnowledgeEngine:
         lore.record_system(self._system_id())
         try:
             lore.save()
-        except OSError as e:
+        except Exception as e:   # memory is a bonus: never fail indexing over it
             logger.warning(f"Could not save Kitsune's lore to {lore.path}: {e}")
         links = self.link_services(services)
         self.cache.clear()
@@ -364,7 +373,12 @@ class RepositoryKnowledgeEngine:
     # ── Lore: Kitsune grows with age (see services/lore.py) ───────────────
 
     def _lore(self):
-        from kitsune.services.lore import Lore
+        """Kitsune's lore: shared through Neo4j when the graph lives there (one team, one
+        memory), else a local file. An explicit KITSUNE_LORE path always wins."""
+        from kitsune.services.lore import Lore, SharedLore
+        driver = getattr(self.graph_store, "_driver", None)
+        if not os.getenv("KITSUNE_LORE") and not self.graph_store.use_fallback and driver is not None:
+            return SharedLore(driver)
         return Lore()
 
     def _system_id(self) -> str:
@@ -382,7 +396,7 @@ class RepositoryKnowledgeEngine:
         lore.set_blind_spots(system_id, spots)
         try:
             lore.save()
-        except OSError as e:
+        except Exception as e:   # memory is a bonus: never fail indexing over it
             logger.warning(f"Could not save Kitsune's lore to {lore.path}: {e}")
 
     def _relink(self) -> int:
@@ -487,6 +501,21 @@ class RepositoryKnowledgeEngine:
 
 
     # ── Maintenance ───────────────────────────────────────────────────────
+
+    def _make_keyword_store(self, data_dir: str):
+        """BM25 in Qdrant when the vectors are there (shared by the whole team), else a
+        local file. KITSUNE_KEYWORD_STORE=local forces the file."""
+        client = getattr(self.vector_store, "_client", None)
+        if os.getenv("KITSUNE_KEYWORD_STORE", "").lower() != "local" \
+                and not self.vector_store.using_fallback and client is not None:
+            try:
+                from kitsune.store.qdrant_keyword_store import QdrantKeywordStore
+                store = QdrantKeywordStore(client, f"{self.vector_store._collection_name}_bm25")
+                logger.info("Keyword store: Qdrant (shared)")
+                return store
+            except Exception as e:
+                logger.warning(f"Qdrant keyword index unavailable ({e}); using a local BM25 file")
+        return KeywordStore(persist_path=os.path.join(data_dir, "bm25_index.pkl"))
 
     def clear_all(self):
         """Delete all indexed data from all stores."""

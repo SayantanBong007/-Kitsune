@@ -130,7 +130,13 @@ class GraphStore:
 
         try:
             from neo4j import GraphDatabase
-            self._driver = GraphDatabase.driver(uri, auth=(user, password))
+            try:
+                # No query notices in the logs, e.g. "GRPC_CALLS doesn't exist" for a
+                # system without gRPC (driver 5.7+)
+                self._driver = GraphDatabase.driver(uri, auth=(user, password),
+                                                    notifications_min_severity="OFF")
+            except TypeError:
+                self._driver = GraphDatabase.driver(uri, auth=(user, password))
             self._driver.verify_connectivity()
             logger.info(f"Neo4j connected successfully at {uri}!")
             self._setup_constraints()
@@ -860,6 +866,9 @@ class GraphStore:
             pattern = f"(other:Chunk)-[:{'|'.join(edge_types)}*1..{depth}]->(start:Chunk)"
         external_filter = "" if include_external else "AND other.id IS NOT NULL"
         ambiguous_filter = "" if include_ambiguous else _NO_AMBIGUOUS
+        # `via`: the edge touching `other` — the one reaching it (callees) or leaving it
+        # (callers), so an HTTP caller in another service shows as "via HTTP_CALLS"
+        edge = "last(relationships(p))" if downstream else "head(relationships(p))"
         query = f"""
         MATCH p = {pattern}
         WHERE start.ns = $ns AND (start.name = $name OR start.qualified_name = $name)
@@ -867,7 +876,7 @@ class GraphStore:
         RETURN other.name AS name, other.qualified_name AS qualified_name,
                other.file_path AS file_path, other.start_line AS start_line,
                other.service AS service, min(length(p)) AS depth,
-               head(collect(type(last(relationships(p))))) AS via
+               head(collect(type({edge}))) AS via
         ORDER BY depth, qualified_name
         """
         with self._driver.session() as session:

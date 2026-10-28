@@ -1,0 +1,62 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      # The repository root is the `kitsune` package, so check it out into kitsune/
+      - uses: actions/checkout@v4
+        with:
+          path: kitsune
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: kitsune/requirements.txt
+      - name: Install (CPU-only PyTorch keeps the runner small)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r kitsune/requirements.txt pytest
+          pip install tree-sitter-kotlin tree-sitter-c-sharp tree-sitter-php
+      - name: Unit tests (offline, local stores)
+        run: python -m pytest kitsune/tests -q
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      qdrant:
+        image: qdrant/qdrant:v1.13.0
+        ports: ["6333:6333"]
+      neo4j:
+        image: neo4j:5-community
+        env:
+          NEO4J_AUTH: neo4j/kitsune_password
+        ports: ["7687:7687"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: kitsune
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: kitsune/requirements.txt
+      - name: Install
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r kitsune/requirements.txt pytest
+      - name: Wait for Neo4j
+        run: |
+          for i in $(seq 1 60); do
+            python -c "from neo4j import GraphDatabase; GraphDatabase.driver('bolt://localhost:7687', auth=('neo4j','kitsune_password')).verify_connectivity()" && break
+            sleep 2
+          done
+      - name: Integration tests (real Qdrant + Neo4j)
+        env:
+          KITSUNE_INTEGRATION: "1"
+        run: python -m pytest kitsune/tests/test_integration.py -q

@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kitsune-code"
+version = "0.5.0"
+description = "Code knowledge engine: hybrid search, call graph and cross-service links for repos and microservice systems"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "sentence-transformers>=2.2",
+    "chromadb>=0.4",
+    "qdrant-client>=1.10",
+    "rank-bm25>=0.2",
+    "networkx>=3.0",
+    "neo4j>=5.0",
+    "openai>=1.30",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "numpy",
+    "tree-sitter>=0.22",
+    "tree-sitter-python>=0.21",
+    "tree-sitter-javascript>=0.21",
+    "tree-sitter-typescript>=0.21",
+    "tree-sitter-c>=0.21",
+    "tree-sitter-cpp>=0.22",
+    "tree-sitter-go>=0.21",
+    "tree-sitter-java>=0.21",
+    "tree-sitter-rust>=0.21",
+]
+
+[project.optional-dependencies]
+languages = ["tree-sitter-kotlin>=1.0", "tree-sitter-c-sharp>=0.23", "tree-sitter-php>=0.23"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+kitsune = "kitsune.cli:main"
+
+[tool.setuptools]
+# The repository root is the `kitsune` package itself
+package-dir = { "kitsune" = "." }
+packages = [
+    "kitsune", "kitsune.agents", "kitsune.concepts", "kitsune.embedder", "kitsune.engine",
+    "kitsune.graph", "kitsune.models", "kitsune.parser", "kitsune.query", "kitsune.services",
+    "kitsune.store",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

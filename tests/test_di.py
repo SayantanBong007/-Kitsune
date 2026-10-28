@@ -156,3 +156,35 @@ def test_python_decorators_are_read(tmp_path):
         "@app.route('/pay')\n@login_required\ndef pay():\n    return 1\n", encoding="utf-8")
     pay = next(d for d in _definitions([tmp_path / "views.py"]) if d["name"] == "pay")
     assert pay["resolve"]["decorators"] == ["app.route", "login_required"]
+
+
+def _gateways(tmp_path, extra_impl_annotation: str, field_annotation: str):
+    (tmp_path / "PaymentGateway.java").write_text(
+        "public interface PaymentGateway { void charge(); }\n", encoding="utf-8")
+    (tmp_path / "StripeGateway.java").write_text(
+        f"@Service(\"stripe\")\n{extra_impl_annotation}\npublic class StripeGateway implements PaymentGateway {{\n"
+        "    public void charge() {}\n}\n", encoding="utf-8")
+    (tmp_path / "PaypalGateway.java").write_text(
+        "@Service\npublic class PaypalGateway implements PaymentGateway {\n"
+        "    public void charge() {}\n}\n", encoding="utf-8")
+    (tmp_path / "Checkout.java").write_text(
+        "@Service\npublic class Checkout {\n"
+        f"    @Autowired {field_annotation} private PaymentGateway gateway;\n"
+        "    public void pay() { gateway.charge(); }\n}\n", encoding="utf-8")
+    defs = _definitions(sorted(tmp_path.glob("*.java")))
+    names = {d["node_id"]: d["qualified_name"] for d in defs}
+    src = next(d["node_id"] for d in defs if d["qualified_name"] == "Checkout.pay")
+    return sorted((names[t], amb) for s, t, amb in CallResolver(defs).resolve_all().edges if s == src)
+
+
+def test_two_beans_without_a_hint_stay_ambiguous(tmp_path):
+    assert _gateways(tmp_path, "", "") == [("PaypalGateway.charge", True), ("StripeGateway.charge", True)]
+
+
+def test_qualifier_picks_the_named_bean(tmp_path):
+    assert _gateways(tmp_path, "", '@Qualifier("paypalGateway")') == [("PaypalGateway.charge", False)]
+    assert _gateways(tmp_path, "", '@Qualifier("stripe")') == [("StripeGateway.charge", False)]
+
+
+def test_primary_bean_wins(tmp_path):
+    assert _gateways(tmp_path, "@Primary", "") == [("StripeGateway.charge", False)]

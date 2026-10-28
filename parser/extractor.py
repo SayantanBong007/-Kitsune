@@ -20,10 +20,14 @@ _IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
 _INHERITANCE_CONTAINER_TYPES = (
     "argument_list", "superclass", "super_interfaces", "type_list", "superclass_list",
     "class_heritage", "extends_clause", "implements_clause", "base_class_clause",
+    "base_list",                                   # C#: class A : B, IC
+    "base_clause", "class_interface_clause",       # PHP: extends B implements C
 )
 _BASE_NAME_TYPES = (
     "identifier", "type_identifier", "scoped_identifier", "scoped_type_identifier",
     "qualified_identifier", "attribute", "member_expression", "generic_type",
+    "qualified_name", "generic_name",              # C#
+    "name",                                        # PHP
 )
 
 # Leaf node types that hold a C/C++ function or method name inside a declarator
@@ -73,7 +77,8 @@ def extract_calls(node: Node, source: bytes) -> set[str]:
                 add(get_node_text(callee, source))
             else:
                 for child in n.children:
-                    if child.type in ("identifier", "attribute", "member_expression"):
+                    if child.type in ("identifier", "attribute", "member_expression",
+                                      "navigation_expression", "simple_identifier"):  # Kotlin
                         add(get_node_text(child, source))
                         break
 
@@ -110,6 +115,13 @@ def extract_inheritance(node: Node, source: bytes) -> list[str]:
         # Java: superclass / super_interfaces → type_list
         # JS: class_heritage; TS: class_heritage → extends_clause / implements_clause
         # C++: base_class_clause
+        if n.type == "delegation_specifier":
+            # Kotlin: class A : Base(), Iface → "Base(" / "Iface" → bare names
+            name = get_node_text(n, source).split("(")[0].split("<")[0].split(" by ")[0]
+            name = _CALLEE_SEPARATORS.split(name.strip())[-1].strip()
+            if name and name not in parents:
+                parents.append(name)
+            return
         if n.type in _INHERITANCE_CONTAINER_TYPES:
             for child in n.children:
                 if child.type in _BASE_NAME_TYPES:
@@ -209,6 +221,14 @@ def extract_decorators(node: Node, source: bytes) -> list[str]:
     for child in node.children:
         if child.type == "modifiers":
             candidates.extend(child.children)
+        elif child.type == "attribute_list":     # C# [ApiController], PHP 8 #[Route]
+            for attr in child.named_children:
+                if attr.type == "attribute":
+                    attr_name = attr.child_by_field_name("name") or \
+                        next((c for c in attr.named_children if c.type in ("identifier", "name",
+                                                                           "qualified_name")), None)
+                    if attr_name is not None:
+                        decorators.append(get_node_text(attr_name, source))
     if node.parent is not None and node.parent.type == "decorated_definition":
         candidates.extend(node.parent.children)
     for child in candidates:
@@ -239,7 +259,7 @@ def extract_name(node: Node, source: bytes) -> str:
         declarator = declarator.child_by_field_name("declarator")
 
     for child in node.children:
-        if child.type in ("identifier", "type_identifier", "name"):
+        if child.type in ("identifier", "type_identifier", "name", "simple_identifier"):  # simple_: Kotlin
             return get_node_text(child, source)
     return ""
 

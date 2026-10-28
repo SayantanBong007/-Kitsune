@@ -11,6 +11,7 @@ Features:
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 from sentence_transformers import SentenceTransformer
@@ -23,6 +24,12 @@ MODEL_NAME = "BAAI/bge-small-en-v1.5"
 # Module-level singleton — loaded ONCE per process, shared everywhere.
 # Single source of truth — loaded once, shared everywhere.
 _model: Optional[SentenceTransformer] = None
+
+
+def _dimension(model) -> int:
+    """Vector size; the method was renamed in sentence-transformers 5."""
+    fn = getattr(model, "get_embedding_dimension", None) or model.get_sentence_embedding_dimension
+    return fn()
 
 
 def get_model() -> SentenceTransformer:
@@ -40,7 +47,13 @@ def get_model() -> SentenceTransformer:
             # Network trouble while checking the Hub for updates: use the cached copy
             logger.warning(f"Could not reach the model hub ({exc}); loading {MODEL_NAME} from cache")
             _model = SentenceTransformer(MODEL_NAME, local_files_only=True)
-        logger.info(f"Embedding model loaded (dim={_model.get_sentence_embedding_dimension()}).")
+        # Speed vs. quality on CPU: embedding only the first N tokens of each chunk is
+        # much faster (256 ≈ 1.7× vs the model's 512). Default: the model's own limit.
+        max_tokens = os.getenv("KITSUNE_EMBED_MAX_TOKENS")
+        if max_tokens and max_tokens.isdigit():
+            _model.max_seq_length = min(int(max_tokens), _model.max_seq_length)
+        logger.info(f"Embedding model loaded (dim={_dimension(_model)}, "
+                    f"max tokens={_model.max_seq_length}).")
     return _model
 
 
@@ -95,4 +108,4 @@ def embed_batch(texts: list[str], batch_size: int = 32) -> list[list[float]]:
 
 def embedding_dim() -> int:
     """Return the number of dimensions in each embedding vector (384)."""
-    return get_model().get_sentence_embedding_dimension() or 384
+    return _dimension(get_model()) or 384

@@ -160,7 +160,9 @@ def link_contracts(contracts: ServiceContracts, services: list[str]) -> list[Lin
     # de-duplicate identical links
     seen, unique = set(), []
     for link in links:
-        key = (link.kind, link.client_node or link.client_file, link.client_line,
+        # client_service too: a shared config file (Spring Cloud Config's application.yml)
+        # gives several services a link from the same file and line
+        key = (link.kind, link.client_service, link.client_node or link.client_file, link.client_line,
                link.server_service, link.server_node, link.method, link.path)
         if key not in seen:
             seen.add(key)

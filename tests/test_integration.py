@@ -203,3 +203,37 @@ def test_caller_indexed_before_callee_relinks(engine, tmp_path):
     assert engine.get_upstream_callers("later_defined") == ["caller"]
     assert _neo4j(engine, "MATCH (n:Chunk {name: 'later_defined'}) WHERE n.id IS NULL "
                           "RETURN count(n) AS c")[0]["c"] == 0
+
+
+def test_keyword_index_is_shared_through_qdrant(engine, repo, tmp_path):
+    """BM25 lives in Qdrant, so a second engine (another teammate's machine, with its own
+    data_dir) finds the same exact-word matches without indexing anything itself."""
+    from kitsune.engine import RepositoryKnowledgeEngine
+    from kitsune.store.qdrant_keyword_store import QdrantKeywordStore
+    assert isinstance(engine.keyword_store, QdrantKeywordStore)
+    engine.index_repository(str(repo))
+    hits = engine.keyword_store.search("charge_card credit", k=3)
+    assert hits and hits[0]["name"] == "charge_card"
+    other = RepositoryKnowledgeEngine(data_dir=str(tmp_path / "teammate"))
+    assert [h["name"] for h in other.keyword_store.search("charge_card credit", k=3)] == \
+           [h["name"] for h in hits]
+    engine.indexer._remove_file(str(repo / "billing.py"))
+    assert not any(h["name"] == "charge_card" for h in other.keyword_store.search("charge_card", k=5))
+
+
+def test_lore_is_shared_and_concurrent_lessons_survive(engine):
+    """Two teammates' lessons saved at the same time both end up in the shared lore."""
+    from kitsune.services.lore import SharedLore
+    driver = engine.graph_store._driver
+    key = "test-shared-lore"
+    try:
+        alice, bob = SharedLore(driver, key), SharedLore(driver, key)   # both loaded before either saves
+        alice.teach_host("shop", "basket-api", "cart")
+        bob.teach_env("shop", "PAY_GW", "payment")
+        alice.save()
+        bob.save()                                   # must not overwrite alice's lesson
+        taught = SharedLore(driver, key).taught("shop")
+        assert taught["hosts"] == {"basket-api": "cart"} and taught["env"] == {"PAY_GW": "payment"}
+    finally:
+        with driver.session() as s:
+            s.run("MATCH (l:KitsuneLore {id: $id}) DELETE l", id=key)

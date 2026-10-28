@@ -85,44 +85,63 @@ Kitsune:          File → parse AST → chunk at function/class boundaries
 ## 🏗 Architecture at a Glance
 
 ```mermaid
-graph TB
-    subgraph Index["🔄 INDEXING — Once per repo (incremental)"]
-        direction TB
-        Repo[📁 Repository<br/>Python · JS · TS · Go · Java · Rust · C · C++]
-        Repo --> Parse["🧩 K1: Parser<br/>tree-sitter AST chunking<br/>+ extract calls / inherits / imports"]
-        Parse --> Chunks[📦 Chunk Objects<br/>function · class · method · module]
-        Chunks --> Ctx["✏️ K2: Contextualizer<br/>prepend context note"]
-        Ctx --> Embed["🔢 Embedder<br/>bge-small-en-v1.5 · 384-dim · local"]
-        Embed --> Vec[("🗄️ Vector Store<br/>Qdrant / ChromaDB")]
-        Chunks --> Graph["🕸️ K3: Graph Builder<br/>CALLS · EXTENDS · IMPORTS · DECORATED_BY"]
-        Graph --> GDB[("🗄️ Graph Store<br/>Neo4j / NetworkX")]
-        Chunks --> BM25[("🗄️ Keyword Store<br/>BM25")]
-        Chunks --> Concepts["🏷️ Concept Extractor<br/>Payment · Auth · User..."]
-        Concepts --> CStore[("🗄️ Concept Store")]
+flowchart TB
+    subgraph SRC["📁 SOURCE CODE"]
+        Repo["One repo · a monorepo · many service repos<br/>Python · Java · Go · JS/TS · C/C++ · Rust<br/>(+ optional Kotlin · C# · PHP)"]
     end
 
-    subgraph Query["🔍 QUERY — Every question (< 1s)"]
-        direction TB
-        Q[❓ User Question]
-        Q --> Router["🧭 Query Router<br/>classify intent"]
-        Router --> Cache{"⚡ Cache Hit?"}
-        Cache -->|Yes| Fast["✅ Return instantly<br/>~0ms"]
-        Cache -->|No| Search["🔎 Hybrid Search"]
-        Search --> S1["Semantic<br/>(vector similarity)"]
-        Search --> S2["Graph<br/>(multi-hop traversal)"]
-        Search --> S3["Keyword<br/>(BM25 exact match)"]
-        S1 --> RR["📊 Cross-Encoder<br/>Reranker"]
-        S3 --> RR
-        RR --> Budget["🛡️ Context Budget<br/>cap at 5,000 chars (configurable)"]
-        Budget --> LLM["🤖 LLM Synthesizer<br/>cited answer"]
-        LLM --> Ans[✅ Answer]
-        Ans --> CW["💾 Write to cache"]
+    subgraph IDX["🔄 1 · INDEX: once, then only changed files · all local, no LLM"]
+        direction LR
+        Parse["🧩 Parser · tree-sitter<br/>whole functions / classes<br/>= chunks"]
+        Facts["🔎 Facts per chunk<br/>calls · types · imports<br/>@annotations · inheritance"]
+        Embed["🔢 Embedder<br/>bge-small, on this machine<br/>chunk → 384 numbers"]
+        Resolve["🎯 Call resolver<br/>which charge() is meant?<br/>DI: @Service · @Qualifier · @Primary"]
+        Link["🔗 Service linker<br/>HTTP · gRPC · queues<br/>Feign · gateways · config server"]
+        Parse --> Facts
+        Parse --> Embed
+        Facts --> Resolve
+        Facts --> Link
     end
 
-    Vec -.-> S1
-    GDB -.-> S2
-    BM25 -.-> S3
+    subgraph STORE["🗄️ 2 · STORES: what each one holds"]
+        direction LR
+        Q[("<b>Qdrant</b> (or ChromaDB locally)<br/>📄 RAW SOURCE CODE of every chunk<br/>+ its vector + file · lines · service")]
+        K[("<b>Keyword index</b><br/>Qdrant _bm25 collection<br/>(or local file)<br/>📄 copy of the code, by exact words")]
+        N[("<b>Neo4j</b> (or NetworkX locally)<br/>🕸️ NO code: names · file:line<br/>CALLS · EXTENDS · HTTP_CALLS<br/>GRPC_CALLS · MESSAGES")]
+        L[("<b>Lore</b> (Neo4j / file)<br/>📜 lessons taught<br/>habits learned · blind spots")]
+    end
+
+    subgraph ASK["❓ 3 · ANSWER: every question"]
+        direction LR
+        Who["👩‍💻 API · kitsune CLI<br/>🤖 AI agents (MCP)"]
+        Router["🧭 Router<br/>lookup · dependency<br/>impact · concept"]
+        Find["🔍 Find the chunks<br/>meaning + structure<br/>+ exact words"]
+        Code["📄 Fetch their RAW CODE<br/>by chunk id<br/>+ rerank + size limit"]
+        LLM["🤖 LLM (Groq by default)<br/>the ONLY step that uses AI:<br/>explains, cites file:line"]
+        Who --> Router --> Find --> Code --> LLM
+    end
+
+    Repo --> Parse
+    Embed --> Q
+    Parse --> K
+    Resolve --> N
+    Link --> N
+    Link <--> L
+    Q -. "by meaning" .-> Find
+    K -. "by exact words" .-> Find
+    N -. "by relationship" .-> Find
+    Q -. "raw code" .-> Code
+    K ~~~ Who
 ```
+
+**Where everything is stored, at a glance:**
+
+| Question | Answer |
+|---|---|
+| Is the raw code kept? | **Yes.** Every function and class is stored exactly as written, with file and lines |
+| Where? | In **Qdrant**, next to its vector (collection `kitsune_chunks__<project>`, field `text`), plus a copy in the keyword index. On a laptop without servers: ChromaDB and a local file |
+| What's in Neo4j? | **The connections, not the code:** which function calls which, across services too. Each node points to its code in Qdrant through the same chunk id |
+| Where is AI used? | **Only at the end**, to write the answer from the raw code that was found. Indexing, linking and search use no LLM |
 
 ### Component Map
 
@@ -130,7 +149,15 @@ graph TB
 kitsune/
 ├── engine/knowledge_engine.py       ← Single entry point (facade, per-project namespace)
 ├── indexer.py                       ← K1+K2+K3 orchestrator (parallel, incremental)
+├── cli.py                           ← The `kitsune` command line (index, ask, callers, links, teach…)
 ├── llm.py                           ← Shared LLM client/model/reasoning settings
+│
+├── services/                        ← MANY SERVICES, ONE GRAPH
+│   ├── discovery.py                 ← Find services (repos, manifests, spring.application.name)
+│   ├── contracts.py                 ← What each service offers / calls (HTTP, gRPC, queues,
+│   │                                   Feign, gateways, config server, OAuth2)
+│   ├── linker.py                    ← Match calls to offers → HTTP_CALLS / GRPC_CALLS / MESSAGES
+│   └── lore.py                      ← Kitsune's memory: lessons, habits, blind spots
 │
 ├── models/
 │   ├── chunk.py                     ← Chunk with calls/inherits/imports/hash
@@ -151,9 +178,12 @@ kitsune/
 │   ├── qdrant_store.py              ← Qdrant (server, scalable) + ChromaDB fallback
 │   ├── vector_store.py              ← ChromaDB (embedded, for dev/CI)
 │   ├── graph_store.py               ← Neo4j + NetworkX (pickle-persisted, O(1) index)
-│   └── keyword_store.py             ← BM25 (dict-based, O(1) upsert)
+│   ├── keyword_store.py             ← BM25, local file (dict-based, O(1) upsert)
+│   └── qdrant_keyword_store.py      ← BM25 in Qdrant, shared by the team (IDF done by Qdrant)
 │
 ├── graph/
+│   ├── resolver.py                  ← Which definition each call means (types, imports, DI)
+│   ├── library_catalog.py           ← External libraries: role and risk (Stripe, Redis, …)
 │   └── traversal.py                 ← Multi-hop BFS, path finding, impact analysis
 │
 ├── query/                           ← QUERY TIME
@@ -236,14 +266,15 @@ sequenceDiagram
     Parser-->>Pool: List[Chunk] per file
     Pool-->>Idx: All parsed chunks
 
+    Idx->>Embed: embed groups of ~512 chunks across files (batch 32)
+    Note over Embed: K2: Contextualize → Embed<br/>One long chunk no longer pads a whole file's batch<br/>(~1.5× faster than per-file)
+    Embed-->>Idx: 384-dim vectors per file
+
     loop Sequential storage (thread-safe writes)
         Idx->>Idx: Remove this file's old chunks (vector + keyword + graph)
-        Idx->>Embed: embed_batch(texts, batch_size=64)
-        Note over Embed: K2: Contextualize → Embed<br/>Memory-safe: 64 chunks per batch
-        Embed-->>Idx: 384-dim vectors
-        Idx->>VS: upsert_batch(chunks, vectors)
-        Idx->>KS: upsert(chunk_id, text, metadata)
-        Idx->>GS: upsert node (relink stubs) + add CALLS/EXTENDS/IMPORTS/DECORATED_BY edges
+        Idx->>VS: upsert_batch(chunks, vectors): vector + RAW CODE + metadata
+        Idx->>KS: upsert(chunk_id, text, metadata): code by exact words
+        Idx->>GS: upsert node (no code: name, file:line) + CALLS/EXTENDS/IMPORTS/DECORATED_BY edges
     end
 
     Idx->>KS: build() — finalize BM25 index
@@ -462,8 +493,17 @@ graph TB
     end
 
     subgraph Keyword["Keyword Store"]
-        KB[BM25<br/>rank_bm25<br/>Dict-based constant-time upsert]
-        KB --> KB_F[✅ All environments]
+        KQ[BM25 in Qdrant<br/>collection &lt;name&gt;_bm25<br/>shared by the team]
+        KB[BM25 local file<br/>rank_bm25<br/>Dict-based constant-time upsert]
+        KQ --> KQ_F[✅ Production: same results on every machine]
+        KB --> KB_F[✅ Dev/CI: no server]
+    end
+
+    subgraph Lore["Lore (Kitsune's memory)"]
+        LN[Neo4j node :KitsuneLore<br/>merged on save]
+        LF[JSON file]
+        LN --> LN_F[✅ Production: one memory per team]
+        LF --> LF_F[✅ Dev/CI and evaluations]
     end
 
     subgraph Concept["Concept Store"]
@@ -472,12 +512,16 @@ graph TB
     end
 ```
 
-| Store | Primary | Fallback | Persistence | When to Use Primary |
-|-------|---------|----------|-------------|---------------------|
-| **Vector** | Qdrant (server) | ChromaDB (embedded) | Disk (automatic) | Production, multi-user, 10K+ files |
-| **Graph** | Neo4j (server) | NetworkX (in-memory) | Pickle (disk) | Production, complex graph queries |
-| **Keyword** | BM25 (in-memory) | — | Pickle (disk) | All environments |
-| **Concept** | JSON file | — | Disk | All environments |
+| Store | Primary | Fallback | Holds the raw code? | What it holds |
+|-------|---------|----------|---------------------|---------------|
+| **Vector** | Qdrant (server) | ChromaDB (embedded) | ✅ **Yes** (`text` field) | Each chunk's source code + vector + file, lines, service, metadata |
+| **Keyword** | BM25 in Qdrant (`_bm25` collection) | BM25 local file | ✅ Yes (a copy) | Term weights for exact-word search + the code |
+| **Graph** | Neo4j (server) | NetworkX (in-memory, pickled) | ❌ No | Names, file:line, CALLS / EXTENDS / IMPORTS / DECORATED_BY, cross-service HTTP_CALLS / GRPC_CALLS / MESSAGES |
+| **Lore** | Neo4j node `:KitsuneLore` | JSON file | ❌ No | Taught lessons, learned habits, blind spots |
+| **Concept** | JSON file | — | ❌ No | Business concepts (Payment, Auth…) and risk |
+
+Set `KITSUNE_REQUIRE_SERVERS=1` on team setups: if Qdrant or Neo4j can't be reached,
+Kitsune stops with an error instead of quietly falling back to private local stores.
 
 Backend notes:
 - **Qdrant** point IDs are UUIDv5 of the chunk's `node_id` (Qdrant only accepts
@@ -558,7 +602,7 @@ LLM_MODEL=openai/gpt-oss-20b
 |-----------|-----------|-----|
 | Graph lookup by name | **O(1)** | Name → node_id hash index |
 | BM25 document upsert | **O(1)** | Dict-based storage |
-| Embedding memory | **O(batch_size)** | 64 chunks per batch, freed after each |
+| Embedding memory | **O(group size)** | ~512 chunks per group (1,024 per model call), freed after each |
 | File parsing | **O(files / workers)** | Parallel ThreadPool (4-8 workers) |
 | Graph load from disk | **O(V + E)** | Pickle binary (10x faster than JSON) |
 | Repeated query | **O(1)** | LRU cache with semantic similarity |

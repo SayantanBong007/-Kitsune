@@ -72,9 +72,11 @@ class HybridSearcher:
         self._keyword = keyword_store or KeywordStore()
         self._cache = cache  # Optional query cache
 
-        # Reuse the singleton embedding model (S13 fix)
-        logger.info("HybridSearcher: using shared embedding model singleton.")
-        self._embedder = get_model()
+    @property
+    def _embedder(self):
+        """The shared embedding model, loaded on the first search (S13: one singleton).
+        Graph-only use — the CLI's callers/links/map — never pays the model's start-up."""
+        return get_model()
 
     def search(self, query: str, k_primary: int | None = None, plan: QueryPlan | None = None,
                max_context_chars: int | None = None) -> SearchResult:

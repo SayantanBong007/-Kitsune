@@ -81,13 +81,14 @@ flowchart LR
     C -- "ambiguous" --> P["PaypalPaymentGateway.charge()<br/>@Service"]
 ```
 
-If two beans implement the same interface, the real choice depends on `@Qualifier` or on
-configuration. Kitsune links **both** and marks the edges **ambiguous**. Normal answers leave
-ambiguous edges out, and you can ask for them explicitly. **It never invents certainty.**
+If two beans implement the same interface, Kitsune uses the same hints Spring does:
+- **`@Qualifier("stripe")`** on the field or constructor parameter picks the bean named `stripe`. That's the name in `@Service("stripe")`, or the class name in lowerCamelCase.
+- Otherwise, a **`@Primary`** bean wins.
+- With no hint, Kitsune links **both** and marks the edges **ambiguous**. Normal answers leave ambiguous edges out, and you can ask for them explicitly. **It never invents certainty.**
 
 ### Limits (roadmap)
-- `@Qualifier` / `@Primary` are not yet used to pick one bean.
 - Beans declared in Spring XML, Guice modules or Dagger modules are not read.
+- A bean picked by configuration (profiles, `@ConditionalOnProperty`) stays ambiguous.
 
 > 💬 **Say it like this:** *"Kitsune resolves injection the way a developer does: field type →
 > implementing class → bean annotation. When there are several candidates, it marks the link
@@ -285,10 +286,13 @@ client** (Java Swing), with the file and line in each repo.
 Zero wrong links in all four. The *first-run* column is the honest expectation for a
 brand-new style of code before its patterns are taught.
 
+**Also understood:**
+- **Feign clients:** `@FeignClient(name = "customers-service")` interfaces become calls to that service. One with an outside `url` is treated as an external API, never linked.
+- **Spring Cloud Config servers:** a service's `<app-name>.yml` on the config server supplies its context path, gateway routes and OAuth2 dependencies.
+
 ### Limits (roadmap)
-- Clients that resolve only through service discovery (Feign `@FeignClient`) are not yet read.
-- PHP, Kotlin and C# code isn't parsed. C# gRPC services still link through their `.proto`
-  contract.
+- Kotlin, C# and PHP are parsed (optional grammars), but their web frameworks' routes and HTTP clients (ASP.NET, Ktor, Laravel) aren't read for service links yet. C# gRPC services still link through their `.proto` contract.
+- URLs passed through Spring property beans (`sso.getUserInfoUri()`) aren't followed.
 
 > 💬 **Say it like this:** *"Each service says what it offers and what it calls. Kitsune
 > evaluates the URLs like the program would, matches the two lists, and draws the network
@@ -311,11 +315,11 @@ flowchart LR
 
 | Problem | What Kitsune does today | Next step |
 |---|---|---|
-| Several beans for one interface | Links all, marked **ambiguous** | Read `@Qualifier` / `@Primary` |
+| Several beans for one interface | `@Qualifier` / `@Primary` decide; with no hint, all are linked as **ambiguous** | Profile- or property-based bean choice |
 | Bean defined in XML / Guice / Dagger | Not seen | Read those configs |
 | Custom annotation | Stored, searchable | Rule list per team |
 | URL known only at run time | **Possible** link / blind spot | Taught through the lore |
-| Feign / service-discovery clients | Not read | Add `@FeignClient` support |
+| URL passed through a Spring properties bean | Service-level dependency found through OAuth2/config; the exact call is missed | Model `@ConfigurationProperties` binding |
 
 > 💬 **The closing line:** *"Kitsune reads code; it doesn't run it. Where only run time knows,
 > Kitsune says so instead of guessing. One lesson from the team fixes it permanently."*

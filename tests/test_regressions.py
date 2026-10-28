@@ -151,3 +151,12 @@ def test_projects_have_separate_catalogs(tmp_path):
     eb.index_repository(str(b))
     assert set(ea.get_library_catalog()) == {"stripe"}
     assert set(eb.get_library_catalog()) == {"redis"}
+
+
+def test_require_servers_refuses_to_fall_back(tmp_path, monkeypatch):
+    """With KITSUNE_REQUIRE_SERVERS=1 an unreachable server is an error, not a silent
+    switch to private local stores (conftest points Neo4j at a closed port)."""
+    from kitsune.engine import RepositoryKnowledgeEngine
+    monkeypatch.setenv("KITSUNE_REQUIRE_SERVERS", "1")
+    with pytest.raises(RuntimeError, match="Neo4j"):
+        RepositoryKnowledgeEngine(data_dir=str(tmp_path / "d"))
