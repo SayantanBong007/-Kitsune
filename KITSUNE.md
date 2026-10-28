@@ -369,6 +369,7 @@ python kitsune/eval/run_system_eval.py -v    # many services
 ```
 
 **Further reading:**
+- [ARCHITECT_QA.md](ARCHITECT_QA.md): how Kitsune handles dependency injection, annotations, external libraries and multi-repo.
 - [KITSUNE_ARCHITECTURE.md](KITSUNE_ARCHITECTURE.md): deep technical detail.
 - [MULTI_SERVICE_DESIGN.md](MULTI_SERVICE_DESIGN.md): the multi-service design.
 - [BENCHMARK_V2_REPORT.md](BENCHMARK_V2_REPORT.md): retrieval benchmark.
